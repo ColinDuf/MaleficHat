@@ -8,32 +8,43 @@
         body {
             font-family: 'Arial', sans-serif;
             margin: 0;
-            padding: 20px;
-            background-color: #f9f9f9;
-            color: #333;
-            line-height: 1.6;
+            padding: 0;
+            background-color: #2c2c2c;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
 
         h1 {
             font-size: 2.5rem;
-            color: #007bff;
+            color: #f0ad4e;
             text-align: center;
-            margin-bottom: 30px;
+            margin: 0;
+            padding: 10px;
+            background-color: #1e1e1e;
         }
 
         h2 {
             font-size: 1.8rem;
-            color: #333;
+            color: #ffffff;
+            border-bottom: 2px solid #f0ad4e;
+            padding-bottom: 5px;
             margin-top: 40px;
         }
 
         p {
-            font-size: 1rem;
+            font-size: 1.2rem;
             margin-bottom: 20px;
+            max-width: 800px;
+            text-align: justify;
         }
 
         section {
             margin-bottom: 40px;
+            max-width: 900px;
+            margin: 10px auto;
+            flex-grow: 1;
         }
 
         footer {
@@ -41,9 +52,24 @@
             padding: 20px;
             background-color: #1e1e1e;
             color: #fff;
-            position: fixed;
-            bottom: 0;
             width: 100%;
+            margin-top: auto;
+        }
+
+        .back-button {
+            background-color: #f0ad4e;
+            color: #ffffff;
+            padding: 10px 20px;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 20px;
+            display: inline-block;
+        }
+
+        .back-button:hover {
+            background-color: #e99b41;
         }
     </style>
 </head>
@@ -55,19 +81,20 @@
         <h2>Politique de Confidentialité</h2>
         <p>
             MaleficHat collecte des données de votre compte LEAGUE OF LEGEND lorsque vous l'autorisez. 
-            Nous suivons votre historique de matchs et votre rang. 
-            Nous collectons également certaines données de votre compte Discord (ID des channels) lorsque vous utilisez nos commandes. 
-            Ces données sont stockées pour permettre nos services. D'autres utilisateurs peuvent voir certaines de ces données comme vos statistiques et votre rang. 
-            Aucune donnée personnelle ne sera partagée avec des tiers. Vous pouvez à tout moment arrêter la collecte de données en utilisant la commande /unregister. Pour toute question, contactez-nous à colinduf45@gmail.com.
+            MaleficHat garde une trace de votre historique de matchs et de votre rang. 
+            MaleficHat collecte également des données de votre compte Discord (ID des channels) lorsque vous utilisez ses commandes. 
+            Ces données sont stockées pour permettre le bon fonctionnement des services. D'autres utilisateurs peuvent consulter certaines données comme vos statistiques et votre rang. Aucune donnée personnelle ne sera partagée avec des tiers. Vous pouvez à tout moment arrêter la collecte des données et demander leur suppression en utilisant la commande /unregister. 
+            Pour toute question, contactez-nous à colinduf45@gmail.com.
         </p>
-        <p>Cette politique de confidentialité est sujette à modification à tout moment.</p>
+        <p>Cette Politique de Confidentialité est sujette à modification à tout moment.</p>
     </section>
 
     <section>
         <h2>Conditions d'Utilisation</h2>
         <p>
-            En utilisant le bot Discord MaleficHat LEAGUE OF LEGEND, vous acceptez d'être lié par ces conditions. MaleficHat est fourni "tel quel", sans aucune garantie, expresse ou implicite. 
-            Nous nous réservons le droit de révoquer l'accès à tout utilisateur à tout moment. Ces conditions peuvent être modifiées sans préavis.
+            En utilisant le bot Discord MaleficHat LEAGUE OF LEGEND, vous acceptez d'être lié par ces Termes et Conditions. 
+            MaleficHat est fourni "tel quel", sans garantie expresse ou implicite. Nous nous réservons le droit de révoquer l'accès à tout utilisateur à tout moment. 
+            Ces Termes peuvent être modifiés sans préavis.
         </p>
     </section>
 
@@ -81,8 +108,9 @@
 
     <footer>
         &copy; 2024 - MaleficHat Bot. Tous droits réservés.
+        <br><br>
+        <a href="javascript:history.back()" class="back-button">Retour</a>
     </footer>
 
 </body>
 </html>
-    
