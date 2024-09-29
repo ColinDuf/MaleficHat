@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -18,9 +18,14 @@
             height: 100vh;
         }
 
+        header {
+            margin-bottom: 20px; /* Add some space below the header */
+            text-align: center; /* Center the header text */
+        }
+
         h1 {
             font-size: 3rem;
-            margin-bottom: 20px;
+            color: #f0ad4e;
         }
 
         p {
@@ -31,17 +36,14 @@
         }
 
         a.button {
-            background-color: #007bff;
+            background-color: #f0ad4e;
             color: #fff;
             padding: 15px 30px;
             text-decoration: none;
             border-radius: 5px;
             font-size: 1.2rem;
             transition: background-color 0.3s;
-        }
-
-        a.button:hover {
-            background-color: #0056b3;
+            margin: 0 10px; /* Add margin to separate buttons */
         }
 
         footer {
@@ -58,14 +60,29 @@
     </style>
 </head>
 <body>
-    <h1>Bienvenue sur le Bot League of Legends</h1>
-    <p>Notre bot vous offre des statistiques en direct et des informations sur vos parties et vos performances sur League of Legends. Ajoutez-le à votre serveur pour en profiter !</p>
-    <a href="https://discord.com/oauth2/authorize?client_id=857595373514522664" class="button">Ajouter le Bot à Discord</a>
+    <header>
+        <h1>MaleficHat Bot</h1>
+    </header>
+    <p>
+        MaleficHat is designed to track players' performances in League of Legends. 
+        It allows users to register a player using their Riot ID and retrieve information about their recent ranked games in Solo/Duo. 
+        The bot automatically monitors the matches of registered players and sends a summary of the statistics at the end of each game, 
+        including K/D/A, damage dealt, and game duration.
+    </p>
+    <p>
+        Users can also view the last 10 ranked games of a player, organized in a clear format with information about their rank 
+        (tier, rank) and league points (LP). Additionally, users can create a personalized leaderboard with their friends to see who is the best!
+    </p>
+    <p>
+        Players have the option to disable all functionalities at any time.
+    </p>
+    <div>
+        <a href="https://discord.com/oauth2/authorize?client_id=857595373514522664" class="button" target="_blank">Add the Bot to Discord</a>
+        <a href="https://discord.gg/8TYTYD8wwD" class="button" target="_blank">Help</a>
+    </div>
 
     <footer>
-        <a href="legal.html">Conditions d'utilisation</a>
+        <a href="legal.html">Terms of Service</a>
     </footer>
 </body>
 </html>
-
-
