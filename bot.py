@@ -245,6 +245,10 @@ async def check_for_game_completion():
                             guild_data['rank'] = new_rank
                             guild_data['lp'] = new_lp
                             guild_data['last_match_id'] = current_last_match_id
+                            # Vérifier si le joueur est dans le leaderboard pour cette guilde
+                            if guild_data.get('leaderboard'):
+                                guild_data['daily_lp'] += lp_change
+                                guild_data['weekly_lp'] += lp_change
 
                             save_data(data)  # Sauvegarder après mise à jour des guilds
 
@@ -264,58 +268,10 @@ async def check_for_game_completion():
 
                             await channel.send(embed=embed)
 
-        # Vérifier les joueurs dans le leaderboard et mettre à jour leurs LP journaliers et hebdomadaires
-        for guild_id, leaderboard_data in data.get("leaderboard", {}).items():
-            for username, player_data in leaderboard_data.get("players", {}).items():
-                puuid = player_data.get("puuid")
-                if not puuid:
-                    continue
-
-                # Récupérer le dernier match joué
-                last_match_id = player_data.get("last_match_id")
-                current_last_match_id = get_last_match(puuid, 1)
-
-                if not current_last_match_id or not isinstance(current_last_match_id, list):
-                    continue  # Pas de nouveau match
-
-                current_last_match_id = current_last_match_id[0]  # Prendre le premier élément de la liste
-
-                if current_last_match_id == last_match_id:
-                    continue  # Pas de nouveau match
-
-                # Récupérer les détails du match terminé
-                match_details = get_match_details(current_last_match_id, puuid)
-                if match_details:
-                    result, champion, kills, deaths, assists, game_duration, _, damage = match_details
-
-                    # Récupérer le nouveau rang et les LP après le match
-                    summoner_id = player_data.get("summoner_id")
-                    new_rank_info = get_summoner_rank(summoner_id)
-
-                    if new_rank_info != "Unknown":
-                        new_tier, new_rank, new_lp = new_rank_info.split()[:3]
-                        new_lp = int(new_lp.split()[0])
-
-                        # Comparer avec le rang précédent
-                        old_tier = player_data["tier"]  # Utiliser player_data pour les informations tier/rank
-                        old_rank = player_data["rank"]
-                        old_lp = player_data["lp"]
-
-                        # Calculer les LP gagnés ou perdus
-                        lp_change = calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp)
-
-                        # Mettre à jour les LP journaliers et hebdomadaires dans le leaderboard
-                        player_data["daily_lp_change"] += lp_change
-                        player_data["weekly_lp_change"] += lp_change
-                        player_data["last_match_id"] = current_last_match_id  # Mettre à jour l'ID du dernier match joué
-
-                        logging.info(f"Updated leaderboard for {username}: Daily LP change: {player_data['daily_lp_change']}, Weekly LP change: {player_data['weekly_lp_change']}")
-
                         # Sauvegarder les modifications
-                        save_data(data)  # Assurez-vous d'appeler save_data ici pour que les changements soient écrits
+                        save_data(data)  
 
         await asyncio.sleep(30)  # Attendre 30 secondes avant de vérifier à nouveau
-
 
 @tree.command(name="register", description="Register a player in this server")
 @app_commands.describe(gamename="The player's Riot in game name", tagline="The player's #")
@@ -558,6 +514,169 @@ async def alerte(interaction: discord.Interaction, username: str):
 
     save_data(data)
     await interaction.followup.send(f"Alerte activée pour {username} sur ce channel")
+
+
+
+
+
+
+
+
+
+@tree.command(name="setleaderboard", description="Set a channel for the leaderboard")
+async def set_leaderboard(interaction: discord.Interaction, channel: discord.TextChannel):
+    await interaction.response.defer(ephemeral=True)
+
+    guild_id = str(interaction.guild_id)  # Récupérer l'ID du serveur
+    data = load_data()
+
+    # Initialiser un booléen pour vérifier si des modifications ont été faites
+    leaderboard_set = False
+
+    # Parcourir tous les joueurs de la guilde et mettre à jour leur champ leaderboard
+    for username, player_data in data.items():
+        if guild_id in player_data.get("guilds", {}):
+            guild_info = player_data["guilds"][guild_id]
+            
+            # Mettre à jour le champ leaderboard uniquement si c'est False
+            if guild_info.get('leaderboard') == False:
+                guild_info['leaderboard'] = channel.id
+                leaderboard_set = True
+
+    # Sauvegarder les changements dans le fichier JSON si des modifications ont été faites
+    if leaderboard_set:
+        save_data(data)
+
+    # Confirmation que le leaderboard a été défini
+    await interaction.followup.send(f"Leaderboard set to {channel.mention}.", ephemeral=True)
+
+    # Envoie du leaderboard (si des joueurs sont dans le leaderboard)
+    await send_leaderboard_in_channel(channel, guild_id, data)
+
+async def send_leaderboard_in_channel(channel: discord.TextChannel, guild_id: str, data: dict):
+    """ Fonction pour envoyer le leaderboard dans un salon donné. """
+    
+    leaderboard_players = []  # Liste des joueurs du leaderboard
+
+    # Parcourir tous les joueurs dans les données
+    for username, player_data in data.items():
+        if guild_id in player_data.get("guilds", {}):
+            guild_info = player_data["guilds"][guild_id]
+            if guild_info.get("leaderboard") == channel.id:  # Vérifier que le salon correspond bien
+                leaderboard_players.append({
+                    "username": username,
+                    "lp": guild_info.get("lp", 0),
+                    "tier": guild_info.get("tier", "Unknown"),
+                    "rank": guild_info.get("rank", "Unknown"),
+                    "daily_lp": guild_info.get("daily_lp", 0),
+                    "weekly_lp": guild_info.get("weekly_lp", 0)
+                })
+
+    # Si aucun joueur n'est dans le leaderboard
+    if not leaderboard_players:
+        await channel.send("The leaderboard is currently empty.")
+        return
+
+    # Trier les joueurs par LP (du plus haut au plus bas)
+    leaderboard_players.sort(key=lambda x: x['lp'], reverse=True)
+
+    # Créer un embed pour afficher le leaderboard
+    embed = discord.Embed(
+        title=f"Leaderboard for {channel.guild.name}",
+        description="Top players in this server",
+        color=discord.Color.blue()
+    )
+
+    # Ajouter l'entête du tableau en markdown
+    table_header = "```\n"
+    table_header += f"{'Player':<25} | {'Rank':<15} | {'LP':<5} | {'Day':<5} | {'Week':<5}\n"
+    table_header += "-" * 60 + "\n"
+
+    table_content = ""
+
+    # Ajouter chaque joueur dans le tableau
+    for player in leaderboard_players:
+        table_content += f"{player['username']:<25} | {player['tier']} {player['rank']:<15} | {player['lp']:<5} | {player['daily_lp']:<5} | {player['weekly_lp']:<5}\n"
+
+    # Ajouter le contenu du tableau à l'embed
+    embed.description += table_header + table_content + "```"
+
+    # Envoyer le leaderboard dans le salon configuré
+    await channel.send(embed=embed)
+
+
+
+
+@tree.command(name="addleaderboard", description="Add a player to the leaderboard")
+async def add_leaderboard(interaction: discord.Interaction, player_username: str):
+    await interaction.response.defer(ephemeral=True)
+
+    guild_id = str(interaction.guild_id)  # Récupérer l'ID du serveur
+    data = load_data()
+
+    # Vérifier si le joueur existe dans les données
+    if player_username not in data:
+        await interaction.followup.send("Player not found in the system.", ephemeral=True)
+        return
+
+    # Récupérer les données du joueur
+    player_data = data[player_username]
+
+    # Vérifier si le joueur a des données pour cette guilde
+    if guild_id not in player_data.get("guilds", {}):
+        await interaction.followup.send(f"{player_username} does not have any records for this server.", ephemeral=True)
+        return
+
+    # Récupérer les informations de la guilde pour ce joueur
+    guild_info = player_data["guilds"][guild_id]
+
+    # Vérifier si le salon du leaderboard a été défini pour cette guilde
+    leaderboard_channel_id = None
+    for username, pdata in data.items():
+        if guild_id in pdata.get("guilds", {}):
+            guild_info = pdata["guilds"][guild_id]
+            if guild_info.get("leaderboard"):
+                leaderboard_channel_id = guild_info["leaderboard"]
+                break
+
+    if not leaderboard_channel_id:
+        await interaction.followup.send("No leaderboard has been set for this server.", ephemeral=True)
+        return
+
+    # Ajouter l'ID du salon du leaderboard au joueur
+    guild_info['leaderboard'] = leaderboard_channel_id
+
+    # Sauvegarder les modifications
+    save_data(data)
+
+    # Confirmation que le joueur a été ajouté au leaderboard
+    await interaction.followup.send(f"{player_username} has been added to the leaderboard.", ephemeral=True)
+
+    # Envoyer le leaderboard mis à jour dans le salon du leaderboard
+    leaderboard_channel = interaction.guild.get_channel(leaderboard_channel_id)
+    if leaderboard_channel:
+        await send_leaderboard_in_channel(leaderboard_channel, guild_id, data)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 @client.event
 async def on_ready():
