@@ -530,6 +530,207 @@ async def alerte(interaction: discord.Interaction, username: str):
     save_data(data)
     await interaction.followup.send(f"Alerte activée pour {username} sur ce channel")
 
+
+
+
+
+
+
+
+
+
+
+# Autocomplétion des salons Discord
+async def channel_autocomplete(interaction: discord.Interaction, current: str):
+    return [
+        app_commands.Choice(name=channel.name, value=str(channel.id))
+        for channel in interaction.guild.text_channels
+        if current.lower() in channel.name.lower()
+    ]
+
+# Autocomplétion des joueurs dans le leaderboard
+async def leaderboard_users_autocomplete(interaction: discord.Interaction, current: str):
+    data = load_data()
+    guild_id = str(interaction.guild.id)
+    leaderboard_users = data.get("leaderboards", {}).get(guild_id, {}).get("players", [])
+    return [
+        app_commands.Choice(name=user, value=user)
+        for user in leaderboard_users if current.lower() in user.lower()
+    ]
+
+# Fonction existante pour l'autocomplétion des utilisateurs enregistrés
+async def username_autocomplete(interaction: discord.Interaction, current: str):
+    data = load_data()  # Charger les données
+    guild_id = str(interaction.guild.id)  # ID du serveur actuel (converti en string pour correspondre à la structure des données)
+    
+    # Filtrer les joueurs par ceux qui sont enregistrés dans ce serveur
+    usernames = []
+    for player_key, player_data in data.items():
+        if guild_id in player_data.get('guilds', {}):  # Vérifier si le joueur est enregistré dans ce serveur
+            usernames.append(player_key)
+    
+    # Filtrer les résultats pour ne proposer que ceux qui correspondent au texte de l'utilisateur
+    return [
+        app_commands.Choice(name=username, value=username)
+        for username in usernames if current.lower() in username.lower()
+    ]
+
+# Commande pour définir le leaderboard
+@tree.command(name="setleaderboard", description="Set the channel for the leaderboard")
+@app_commands.autocomplete(channelname=channel_autocomplete)
+async def setleaderboard(interaction: discord.Interaction, channelname: str):
+    data = load_data()
+    guild_id = str(interaction.guild.id)
+
+    # Ajouter ou mettre à jour le canal du leaderboard
+    if "leaderboards" not in data:
+        data["leaderboards"] = {}
+    if guild_id not in data["leaderboards"]:
+        data["leaderboards"][guild_id] = {"channel_id": None, "players": []}
+
+    data["leaderboards"][guild_id]["channel_id"] = int(channelname)
+    save_data(data)
+
+    channel = interaction.guild.get_channel(int(channelname))
+    if channel:
+        await update_leaderboard_message(channel, [])
+        await interaction.response.send_message(
+            f"Leaderboard channel set to <#{channelname}>.", ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            f"Channel <#{channelname}> not found.", ephemeral=True
+        )
+
+# Commande pour ajouter un joueur au leaderboard
+@tree.command(name="addleaderboard", description="Add a player to the leaderboard")
+@app_commands.autocomplete(playername=username_autocomplete)
+async def addleaderboard(interaction: discord.Interaction, playername: str):
+    data = load_data()
+    guild_id = str(interaction.guild.id)
+
+    # Vérifier si le leaderboard est configuré
+    if guild_id not in data.get("leaderboards", {}):
+        await interaction.response.send_message(
+            "Please set a leaderboard channel first using /setleaderboard.", ephemeral=True
+        )
+        return
+
+    # Vérifier si le joueur est enregistré
+    player_data = data.get(playername)
+    if not player_data:
+        await interaction.response.send_message(
+            f"Player {playername} is not registered.", ephemeral=True
+        )
+        return
+
+    # Récupérer le PUUID du joueur
+    puuid = player_data.get("puuid")
+    if not puuid:
+        await interaction.response.send_message(
+            f"No PUUID found for player {playername}.", ephemeral=True
+        )
+        return
+
+    # Ajouter le joueur au leaderboard
+    leaderboard = data["leaderboards"].setdefault(guild_id, {"channel_id": None, "players": []})
+    if puuid in leaderboard["players"]:
+        await interaction.response.send_message(
+            f"Player {playername} is already in the leaderboard.", ephemeral=True
+        )
+        return
+
+    leaderboard["players"].append(puuid)
+    save_data(data)
+
+    # Mettre à jour le message du leaderboard
+    channel_id = leaderboard["channel_id"]
+    channel = interaction.guild.get_channel(channel_id)
+    if channel:
+        await update_leaderboard_message(channel, leaderboard["players"])
+
+    await interaction.response.send_message(
+        f"Player {playername} has been added to the leaderboard.", ephemeral=True
+    )
+
+# Commande pour retirer un joueur du leaderboard
+@tree.command(name="removeleaderboard", description="Remove a player from the leaderboard")
+@app_commands.autocomplete(playername=leaderboard_users_autocomplete)
+async def removeleaderboard(interaction: discord.Interaction, playername: str):
+    data = load_data()
+    guild_id = str(interaction.guild.id)
+
+    # Vérifier si le leaderboard est configuré
+    if guild_id not in data.get("leaderboards", {}):
+        await interaction.response.send_message(
+            "No leaderboard is set for this server.", ephemeral=True
+        )
+        return
+
+    leaderboard = data["leaderboards"][guild_id]
+    if playername not in leaderboard["players"]:
+        await interaction.response.send_message(
+            f"{playername} is not in the leaderboard.", ephemeral=True
+        )
+        return
+
+    leaderboard["players"].remove(playername)
+    save_data(data)
+
+    # Mettre à jour le message du leaderboard
+    channel_id = leaderboard["channel_id"]
+    channel = interaction.guild.get_channel(channel_id)
+    if channel:
+        await update_leaderboard_message(channel, leaderboard["players"])
+
+    await interaction.response.send_message(
+        f"{playername} has been removed from the leaderboard.", ephemeral=True
+    )
+
+# Mettre à jour ou créer le message du leaderboard
+async def update_leaderboard_message(channel: discord.TextChannel, leaderboard_puuids: list):
+    data = load_data()
+    guild_id = str(channel.guild.id)
+    leaderboard_message = "Leaderboard\n\n"
+    leaderboard_message += "Pseudo | Rank | LP (24h) | LP (7j)\n"
+    leaderboard_message += "----------------------------------\n"
+
+    for puuid in leaderboard_puuids:
+        player_data = next((pdata for pname, pdata in data.items() if pdata.get("puuid") == puuid), None)
+        if player_data:
+            username = player_data.get("username", "Unknown")
+            rank = player_data.get("rank", "Unranked")
+            lp_24h = player_data.get("lp_24h", 0)
+            lp_7d = player_data.get("lp_7d", 0)
+            leaderboard_message += f"{username} | {rank} | {lp_24h} | {lp_7d}\n"
+
+    async for message in channel.history(limit=50):
+        if message.author == client.user and message.content.startswith("Leaderboard"):
+            await message.edit(content=f"```{leaderboard_message}```")
+            return
+
+    # Si aucun message existant n'est trouvé, créer un nouveau message
+    await channel.send(f"```{leaderboard_message}```")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @client.event
 async def on_ready():
     await tree.sync()
