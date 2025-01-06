@@ -197,99 +197,6 @@ def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
 
 
 
-async def check_for_game_completion():
-    """Vérifie si un joueur a terminé une partie et met à jour les alertes et le leaderboard."""
-    processed_matches = set()  # To store already processed match IDs
-
-    while True:
-        async with lock:  # Utiliser le verrou pour éviter les duplications
-            data = load_data()
-
-            # Vérifier les joueurs suivis par le système d'alerte
-            for username, user_data in data.items():
-                puuid = user_data.get('puuid')
-                alerte_active = False
-
-                # Vérifier les guilds pour trouver l'alerte active
-                for guild_id, guild_data in user_data.get('guilds', {}).items():
-                    channel_id = guild_data.get('channel_id')
-                    last_match_id = guild_data.get('last_match_id')
-                    alerte_active = guild_data.get('alerte', False)
-
-                    if not puuid or not channel_id or not alerte_active:
-                        continue
-
-                    channel = client.get_channel(channel_id)
-                    if not channel:
-                        continue
-
-                    current_last_match_id = get_last_match(puuid, 1)
-                    if not current_last_match_id or not isinstance(current_last_match_id, list):
-                        continue
-
-                    # Prendre le premier élément de la liste, qui est le match ID
-                    current_last_match_id = current_last_match_id[0]
-
-                    # Skip if the match has already been processed
-                    if current_last_match_id in processed_matches:
-                        continue
-                    
-                    if current_last_match_id != last_match_id:
-                        # Match terminé
-                        match_details = get_match_details(current_last_match_id, puuid)
-                        if match_details:
-                            result, champion, kills, deaths, assists, game_duration, champion_image, damage = match_details
-                            
-                            # Récupérer le nouveau rang du joueur
-                            summoner_id = user_data['summoner_id']
-                            new_rank_info = get_summoner_rank(summoner_id)
-                            if new_rank_info != "Unknown":
-                                new_tier, new_rank, new_lp = new_rank_info.split()[:3]
-                                new_lp = int(new_lp.split()[0])
-
-                                # Comparer avec le rang précédent
-                                old_tier = guild_data['tier']
-                                old_rank = guild_data['rank']
-                                old_lp = guild_data['lp']
-
-                                lp_change = calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp)
-
-                                # Mettre à jour les informations dans guilds (tier, rank, lp)
-                                guild_data['tier'] = new_tier
-                                guild_data['rank'] = new_rank
-                                guild_data['lp'] = new_lp
-                                guild_data['last_match_id'] = current_last_match_id
-
-                                # Vérifier si le joueur est dans le leaderboard pour cette guilde
-                                if guild_data.get('leaderboard'):
-                                    guild_data['daily_lp'] += lp_change
-                                    guild_data['weekly_lp'] += lp_change
-
-                                save_data(data)  # Sauvegarder après mise à jour des guilds
-
-                                logging.info(f"Updated player {username}: LP change: {lp_change}, new LP: {new_lp}")
-
-                                # Construire l'embed pour le match terminé avec les changements de LP
-                                game_result = "Victory" if result == ':green_circle:' else "Defeat" 
-                                lp_text = "LP Win" if lp_change > 0 else "LP Lost"
-                                embed = discord.Embed(
-                                    title=f"{game_result} for {username}",
-                                    color=discord.Color.green() if result == ':green_circle:' else discord.Color.red()
-                                )
-                                embed.add_field(name="K/D/A", value=f"{kills}/{deaths}/{assists}", inline=True)
-                                embed.add_field(name="Damage", value=f"{damage}", inline=True)
-                                embed.add_field(name=lp_text, value=f"{'+' if lp_change > 0 else ''}{lp_change} LP", inline=True)
-                                embed.set_thumbnail(url=champion_image)
-
-                                await channel.send(embed=embed)
-
-                                # Mark this match as processed
-                                processed_matches.add(current_last_match_id)
-
-                            # Sauvegarder les modifications
-                            save_data(data)
-
-        await asyncio.sleep(5)  # Attendre 5 secondes avant de vérifier à nouveau
 
 
 @tree.command(name="register", description="Register a player in this server")
@@ -575,133 +482,23 @@ async def username_autocomplete(interaction: discord.Interaction, current: str):
         for username in usernames if current.lower() in username.lower()
     ]
 
-# Commande pour définir le leaderboard
-@tree.command(name="setleaderboard", description="Set the channel for the leaderboard")
-@app_commands.autocomplete(channelname=channel_autocomplete)
-async def setleaderboard(interaction: discord.Interaction, channelname: str):
-    data = load_data()
-    guild_id = str(interaction.guild.id)
-
-    # Ajouter ou mettre à jour le canal du leaderboard
-    if "leaderboards" not in data:
-        data["leaderboards"] = {}
-    if guild_id not in data["leaderboards"]:
-        data["leaderboards"][guild_id] = {"channel_id": None, "players": []}
-
-    data["leaderboards"][guild_id]["channel_id"] = int(channelname)
-    save_data(data)
-
-    channel = interaction.guild.get_channel(int(channelname))
-    if channel:
-        await update_leaderboard_message(channel, [])
-        await interaction.response.send_message(
-            f"Leaderboard channel set to <#{channelname}>.", ephemeral=True
-        )
-    else:
-        await interaction.response.send_message(
-            f"Channel <#{channelname}> not found.", ephemeral=True
-        )
-
-# Commande pour ajouter un joueur au leaderboard
-@tree.command(name="addleaderboard", description="Add a player to the leaderboard")
-@app_commands.autocomplete(playername=username_autocomplete)
-async def addleaderboard(interaction: discord.Interaction, playername: str):
-    data = load_data()
-    guild_id = str(interaction.guild.id)
-
-    # Vérifier si le leaderboard est configuré
-    if guild_id not in data.get("leaderboards", {}):
-        await interaction.response.send_message(
-            "Please set a leaderboard channel first using /setleaderboard.", ephemeral=True
-        )
-        return
-
-    # Vérifier si le joueur est enregistré
-    player_data = data.get(playername)
-    if not player_data:
-        await interaction.response.send_message(
-            f"Player {playername} is not registered.", ephemeral=True
-        )
-        return
-
-    # Récupérer le PUUID du joueur
-    puuid = player_data.get("puuid")
-    if not puuid:
-        await interaction.response.send_message(
-            f"No PUUID found for player {playername}.", ephemeral=True
-        )
-        return
-
-    # Ajouter le joueur au leaderboard
-    leaderboard = data["leaderboards"].setdefault(guild_id, {"channel_id": None, "players": []})
-    if puuid in leaderboard["players"]:
-        await interaction.response.send_message(
-            f"Player {playername} is already in the leaderboard.", ephemeral=True
-        )
-        return
-
-    leaderboard["players"].append(puuid)
-    save_data(data)
-
-    # Mettre à jour le message du leaderboard
-    channel_id = leaderboard["channel_id"]
-    channel = interaction.guild.get_channel(channel_id)
-    if channel:
-        await update_leaderboard_message(channel, leaderboard["players"])
-
-    await interaction.response.send_message(
-        f"Player {playername} has been added to the leaderboard.", ephemeral=True
-    )
-
-# Commande pour retirer un joueur du leaderboard
-@tree.command(name="removeleaderboard", description="Remove a player from the leaderboard")
-@app_commands.autocomplete(playername=leaderboard_users_autocomplete)
-async def removeleaderboard(interaction: discord.Interaction, playername: str):
-    data = load_data()
-    guild_id = str(interaction.guild.id)
-
-    # Vérifier si le leaderboard est configuré
-    if guild_id not in data.get("leaderboards", {}):
-        await interaction.response.send_message(
-            "No leaderboard is set for this server.", ephemeral=True
-        )
-        return
-
-    leaderboard = data["leaderboards"][guild_id]
-    if playername not in leaderboard["players"]:
-        await interaction.response.send_message(
-            f"{playername} is not in the leaderboard.", ephemeral=True
-        )
-        return
-
-    leaderboard["players"].remove(playername)
-    save_data(data)
-
-    # Mettre à jour le message du leaderboard
-    channel_id = leaderboard["channel_id"]
-    channel = interaction.guild.get_channel(channel_id)
-    if channel:
-        await update_leaderboard_message(channel, leaderboard["players"])
-
-    await interaction.response.send_message(
-        f"{playername} has been removed from the leaderboard.", ephemeral=True
-    )
-
 # Mettre à jour ou créer le message du leaderboard
-async def update_leaderboard_message(channel: discord.TextChannel, leaderboard_puuids: list):
+async def update_leaderboard_message(channel: discord.TextChannel):
     data = load_data()
     guild_id = str(channel.guild.id)
+    leaderboard_data = data.get("leaderboards", {}).get(guild_id, {}).get("players", [])
+    
     leaderboard_message = "Leaderboard\n\n"
     leaderboard_message += "Pseudo | Rank | LP (24h) | LP (7j)\n"
     leaderboard_message += "----------------------------------\n"
 
-    for puuid in leaderboard_puuids:
+    for puuid in leaderboard_data:
         player_data = next((pdata for pname, pdata in data.items() if pdata.get("puuid") == puuid), None)
         if player_data:
-            username = player_data.get("username", "Unknown")
-            rank = player_data.get("rank", "Unranked")
-            lp_24h = player_data.get("lp_24h", 0)
-            lp_7d = player_data.get("lp_7d", 0)
+            username = player_data.get("guilds", {}).get(guild_id, {}).get("username", "Unknown")
+            rank = f"{player_data['guilds'][guild_id]['tier']} {player_data['guilds'][guild_id]['rank']}"
+            lp_24h = player_data['guilds'][guild_id].get("lp_24h", 0)
+            lp_7d = player_data['guilds'][guild_id].get("lp_7d", 0)
             leaderboard_message += f"{username} | {rank} | {lp_24h} | {lp_7d}\n"
 
     async for message in channel.history(limit=50):
@@ -712,7 +509,73 @@ async def update_leaderboard_message(channel: discord.TextChannel, leaderboard_p
     # Si aucun message existant n'est trouvé, créer un nouveau message
     await channel.send(f"```{leaderboard_message}```")
 
+# Vérifier les parties terminées et mettre à jour le leaderboard
+async def check_for_game_completion():
+    processed_matches = set()  # Pour stocker les matchs déjà traités
 
+    while True:
+        async with lock:
+            data = load_data()
+
+            # Vérifier les joueurs suivis par le système d'alerte
+            for username, user_data in data.items():
+                puuid = user_data.get('puuid')
+                for guild_id, guild_data in user_data.get('guilds', {}).items():
+                    channel_id = guild_data.get('channel_id')
+                    last_match_id = guild_data.get('last_match_id')
+
+                    if not puuid or not channel_id:
+                        continue
+
+                    channel = client.get_channel(channel_id)
+                    if not channel:
+                        continue
+
+                    current_last_match_id = get_last_match(puuid, 1)
+                    if not current_last_match_id or not isinstance(current_last_match_id, list):
+                        continue
+
+                    current_last_match_id = current_last_match_id[0]
+
+                    if current_last_match_id in processed_matches:
+                        continue
+
+                    if current_last_match_id != last_match_id:
+                        match_details = get_match_details(current_last_match_id, puuid)
+                        if match_details:
+                            result, champion, kills, deaths, assists, game_duration, champion_image, damage = match_details
+                            summoner_id = user_data['summoner_id']
+                            new_rank_info = get_summoner_rank(summoner_id)
+                            if new_rank_info != "Unknown":
+                                new_tier, new_rank, new_lp = new_rank_info.split()[:3]
+                                new_lp = int(new_lp.split()[0])
+
+                                # Comparer avec les anciennes données et mettre à jour
+                                old_tier = guild_data['tier']
+                                old_rank = guild_data['rank']
+                                old_lp = guild_data['lp']
+                                lp_change = calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp)
+
+                                guild_data['tier'] = new_tier
+                                guild_data['rank'] = new_rank
+                                guild_data['lp'] = new_lp
+                                guild_data['lp_24h'] = guild_data.get('lp_24h', 0) + lp_change
+                                guild_data['lp_7d'] = guild_data.get('lp_7d', 0) + lp_change
+                                guild_data['last_match_id'] = current_last_match_id
+
+                                save_data(data)
+
+                                # Mettre à jour le leaderboard
+                                leaderboard = data.get("leaderboards", {}).get(guild_id, {})
+                                leaderboard_channel = client.get_channel(leaderboard.get("channel_id"))
+                                if leaderboard_channel:
+                                    await update_leaderboard_message(leaderboard_channel)
+
+                                logging.info(f"Updated player {username}: LP change: {lp_change}, new LP: {new_lp}")
+
+                                processed_matches.add(current_last_match_id)
+
+        await asyncio.sleep(5)
 
 
 
