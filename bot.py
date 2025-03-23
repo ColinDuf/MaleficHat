@@ -1,6 +1,5 @@
 import discord
 from discord import app_commands
-import requests
 import os
 import logging
 import asyncio
@@ -9,20 +8,15 @@ import pytz
 import schedule
 from dotenv import load_dotenv
 from create_db import create_db
+import leaderboard_tasks  # Contient notify_leaderboard_update et leaderboard_update_event
+import leaderboard         # Ce module contient les commandes slash du leaderboard
 from fonction_bdd import (
-    insert_player,
-    insert_registration,
-    get_registration,
-    update_registration,
-    delete_registration,
-    insert_match,
-    get_matches,
-    insert_guild,
-    get_guild,
-    get_player,  # get_player(puuid)
-    get_player_by_username,  # À ajouter dans fonction_bdd
-    get_all_registrations, username_autocomplete  # Optionnel, pour check_for_game_completion
-)
+    insert_player, insert_registration, get_registration, update_registration, delete_registration,
+    insert_match, get_matches, insert_guild, get_guild, get_player, get_player_by_username,
+    get_all_registrations, username_autocomplete)
+import requests
+import tracemalloc
+tracemalloc.start()
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -33,10 +27,10 @@ RIOT_API_KEY = os.getenv('RIOT_API_KEY')
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
+leaderboard.setup_tree(tree)
 
 # --- Fonctions d'accès à l'API Riot ---
 def get_puuid(username, hashtag):
-    """Récupère le PUUID à partir du nom d'utilisateur et du hashtag."""
     url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{username}/{hashtag}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     try:
@@ -48,7 +42,6 @@ def get_puuid(username, hashtag):
         return None
 
 def get_summoner_id(puuid):
-    """Récupère l'ID du summoner à partir du PUUID."""
     url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     try:
@@ -60,7 +53,6 @@ def get_summoner_id(puuid):
         return None
 
 def get_summoner_rank(summoner_id):
-    """Récupère le rang (tier, rank et LP) du joueur."""
     url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     try:
@@ -75,7 +67,6 @@ def get_summoner_rank(summoner_id):
     return "Unknown"
 
 def get_last_match(puuid, nb_last_match):
-    """Récupère les derniers identifiants de match classé du joueur."""
     url = f"https://europe.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type=ranked&count={nb_last_match}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     try:
@@ -90,7 +81,6 @@ def get_last_match(puuid, nb_last_match):
         return None
 
 def get_match_details(match_id, puuid):
-    """Récupère les détails d'un match pour un joueur donné."""
     if not match_id:
         logging.error("No match ID provided.")
         return None
@@ -114,9 +104,8 @@ def get_match_details(match_id, puuid):
                     game_duration = (str(timedelta(seconds=game_duration_seconds))
                                      if game_duration_seconds >= 3600
                                      else f"{game_duration_seconds // 60}:{game_duration_seconds % 60:02d}")
-                    # Exemple d'image en fonction du champion
                     if champion == "Naafiri":
-                        champion_image = "https://media.discordapp.net/..."
+                        champion_image = "https://media.discordapp.net/attachments/1287134099026481243/1287206571394207764/Naafiri_OriginalSquare.png?ex=67dffc49&is=67deaac9&hm=d43f7638a813b53b9032f0d351d7908b746a346d19621bdc1783d9952e0d3bd6&=&format=webp&quality=lossless"
                     elif champion == "Ambessa":
                         champion_image = "https://static.wikia.nocookie.net/..."
                     elif champion == "Aurora":
@@ -141,8 +130,7 @@ def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
         rank_diff = (rank_order.index(new_rank) - rank_order.index(old_rank)) * 100
         return tier_diff + rank_diff + (new_lp - old_lp)
 
-# --- Commandes du bot utilisant la BDD ---
-
+# --- Commandes utilisant la BDD ---
 @tree.command(name="register", description="Register a player in this server")
 @app_commands.describe(gamename="The player's Riot in game name", tagline="The player's #")
 async def register(interaction: discord.Interaction, gamename: str, tagline: str):
@@ -162,7 +150,6 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
     if not summoner_id:
         await interaction.followup.send(f"Error fetching Summoner ID for {username}.", ephemeral=True)
         return
-    # Vérifier si le joueur est déjà inscrit dans ce serveur
     if get_registration(puuid, guild_id):
         await interaction.followup.send(f"Player {username} is already registered in this server!", ephemeral=True)
         return
@@ -183,8 +170,6 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
         logging.error(f"Error parsing rank info: {e}")
         await interaction.followup.send("Error parsing rank information.", ephemeral=True)
         return
-
-    # Insertion dans la BDD
     insert_player(puuid, username, summoner_id)
     insert_registration(puuid, guild_id, str(interaction.channel_id), last_match_id, 0, tier, rank_val, lp)
     await interaction.followup.send(
@@ -194,7 +179,7 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
     )
 
 @tree.command(name="unregister", description="Unregister a player from this server")
-@app_commands.autocomplete(username=username_autocomplete)  # Pensez à adapter l'autocomplétion pour la BDD
+@app_commands.autocomplete(username=username_autocomplete)
 async def unregister(interaction: discord.Interaction, username: str):
     username = username.upper()
     guild_id = str(interaction.guild.id)
@@ -202,7 +187,7 @@ async def unregister(interaction: discord.Interaction, username: str):
     if not player:
         await interaction.response.send_message("This player is not registered!", ephemeral=True)
         return
-    puuid = player[1]  # En supposant que la structure soit (summoner_id, puuid, username)
+    puuid = player[1]
     if not get_registration(puuid, guild_id):
         await interaction.response.send_message("This player is not registered in this server!", ephemeral=True)
         return
@@ -223,7 +208,6 @@ async def rank(interaction: discord.Interaction, username: str):
     if not reg:
         await interaction.response.send_message(f"Le joueur {username} n'est pas enregistré dans ce serveur.", ephemeral=True)
         return
-    # Structure de registration : (player_puuid, guild_id, channel_id, last_match_id, alerte, tier, rank, lp, lp_24h, lp_7d)
     tier = reg[5]
     rank_val = reg[6]
     lp = reg[7]
@@ -240,7 +224,7 @@ async def lastmatches(interaction: discord.Interaction, username: str):
         await interaction.followup.send("This player is not registered!", ephemeral=True)
         return
     puuid = player[1]
-    summoner_id = player[0]  # Structure : (summoner_id, puuid, username)
+    summoner_id = player[0]
     rank_info = get_summoner_rank(summoner_id)
     if rank_info == "Unknown":
         await interaction.followup.send("Error retrieving player rank information!", ephemeral=True)
@@ -274,12 +258,10 @@ async def lastmatches(interaction: discord.Interaction, username: str):
         result_icon = ":green_circle:" if match["result"] == ':green_circle:' else ":red_circle:"
         embed.add_field(
             name=f"Result: {result_icon}",
-            value=(
-                f"**Champion:** {match['champion']}\n"
-                f"**K/D/A:** {match['kda']}\n"
-                f"**Damage:** {match['damage']}\n"
-                f"**Duration:** {match['duration']}\n"
-            ),
+            value=(f"**Champion:** {match['champion']}\n"
+                   f"**K/D/A:** {match['kda']}\n"
+                   f"**Damage:** {match['damage']}\n"
+                   f"**Duration:** {match['duration']}\n"),
         )
         if (i + 1) % 2 == 0:
             embed.add_field(name='\u200b', value='\u200b', inline=True)
@@ -314,85 +296,9 @@ async def alerte(interaction: discord.Interaction, username: str):
     else:
         await interaction.followup.send("Could not retrieve the player's rank.", ephemeral=True)
 
-# --- Fonctions pour le leaderboard et la vérification des matchs ---
-async def update_leaderboard_message(channel: discord.TextChannel):
-    guild_id = str(channel.guild.id)
-    # Récupérer les infos du leaderboard via une requête SQL
-    import sqlite3
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT p.username, r.tier, r.rank, r.lp_24h, r.lp_7d
-        FROM registrations r
-        JOIN players p ON r.player_puuid = p.puuid
-        WHERE r.guild_id = ?
-    """, (guild_id,))
-    rows = cursor.fetchall()
-    conn.close()
-    leaderboard_message = "Leaderboard\n\nPseudo | Rank | LP (24h) | LP (7j)\n----------------------------------\n"
-    for row in rows:
-        username, tier, rank_val, lp_24h, lp_7d = row
-        leaderboard_message += f"{username} | {tier} {rank_val} | {lp_24h} | {lp_7d}\n"
-    async for message in channel.history(limit=50):
-        if message.author == client.user and message.embeds and "Leaderboard" in message.embeds[0].title:
-            await message.edit(content=f"```{leaderboard_message}```")
-            return
-    await channel.send(f"```{leaderboard_message}```")
-
-async def update_leaderboard_embed(guild_id):
-    # Récupérer les données du leaderboard en effectuant une jointure entre registrations et players
-    guild_data = get_guild(guild_id)
-    if not guild_data:
-        logging.warning(f"No guild data for guild {guild_id}")
-        return
-    leaderboard_channel_id = guild_data[1]
-    channel = client.get_channel(int(leaderboard_channel_id))
-    if not channel:
-        logging.warning(f"Leaderboard channel {leaderboard_channel_id} not found")
-        return
-    import sqlite3
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT p.username, r.tier, r.rank, r.lp_24h, r.lp_7d
-        FROM registrations r
-        JOIN players p ON r.player_puuid = p.puuid
-        WHERE r.guild_id = ?
-    """, (guild_id,))
-    rows = cursor.fetchall()
-    conn.close()
-    embed = discord.Embed(
-        title="Leaderboard",
-        description="Classement des joueurs",
-        color=discord.Color.blue()
-    )
-    for row in rows:
-        username, tier, rank_val, lp_24h, lp_7d = row
-        embed.add_field(
-            name=username,
-            value=f"Rank: {tier} {rank_val}\nLP (24h): {lp_24h}\nLP (7j): {lp_7d}",
-            inline=False
-        )
-    async for message in channel.history(limit=50):
-        if message.author == client.user and message.embeds and "Leaderboard" in message.embeds[0].title:
-            await message.edit(embed=embed)
-            return
-    await channel.send(embed=embed)
-
 async def check_for_game_completion():
-    processed_matches = set()
     while True:
-        # Récupérer toutes les inscriptions de la BDD
-        import sqlite3
-        conn = sqlite3.connect("database.db")
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT r.player_puuid, r.guild_id, r.channel_id, r.last_match_id, r.tier, r.rank, r.lp, p.summoner_id, p.username
-            FROM registrations r
-            JOIN players p ON r.player_puuid = p.puuid
-        """)
-        rows = cursor.fetchall()
-        conn.close()
+        rows = get_all_registrations()
         for row in rows:
             player_puuid, guild_id, channel_id, last_match_id, old_tier, old_rank, old_lp, summoner_id, username = row
             channel = client.get_channel(int(channel_id))
@@ -402,8 +308,7 @@ async def check_for_game_completion():
             if not current_last_match_ids or not isinstance(current_last_match_ids, list):
                 continue
             current_last_match_id = current_last_match_ids[0]
-            if current_last_match_id in processed_matches:
-                continue
+            # On vérifie si le match est différent du dernier enregistré pour cette inscription
             if current_last_match_id != last_match_id:
                 details = get_match_details(current_last_match_id, player_puuid)
                 if details:
@@ -417,17 +322,22 @@ async def check_for_game_completion():
                             logging.error(f"Error parsing new rank info: {e}")
                             new_lp = 0
                         lp_change = calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp)
-                        update_registration(player_puuid, guild_id, last_match_id=current_last_match_id,
-                                            tier=new_tier, rank=new_rank, lp=new_lp,
-                                            lp_24h=lp_change, lp_7d=lp_change)
+                        update_registration(
+                            player_puuid, guild_id,
+                            last_match_id=current_last_match_id,
+                            tier=new_tier, rank=new_rank, lp=new_lp,
+                            lp_24h=lp_change, lp_7d=lp_change
+                        )
                         await send_match_result_embed(
                             channel, username, result, champion, kills, deaths, assists,
                             game_duration, champion_image, lp_change, damage
                         )
-                        await update_leaderboard_embed(guild_id)
+                        # Signaler que le leaderboard doit être mis à jour
+                        from leaderboard_tasks import leaderboard_update_event
+                        leaderboard_update_event.set()
                         logging.info(f"Updated player {username}: LP change: {lp_change}, new LP: {new_lp}")
-                        processed_matches.add(current_last_match_id)
         await asyncio.sleep(5)
+
 
 async def send_match_result_embed(channel, username, result, champion, kills, deaths, assists,
                                   game_duration, champion_image, lp_change, damage):
@@ -446,10 +356,11 @@ async def send_match_result_embed(channel, username, result, champion, kills, de
 @client.event
 async def on_ready():
     await tree.sync()
-    # create_db()
+    # create_db()  # Uncomment if you wish to recreate the DB on every launch
     logging.info(f"Bot connected as {client.user}")
     asyncio.create_task(check_for_game_completion())
-    # scheduler_loop = schedule_resets()  # Pensez à adapter schedule_resets si nécessaire
+    asyncio.create_task(leaderboard_tasks.notify_leaderboard_update(client))
+    # scheduler_loop = schedule_resets()  # Adapt if necessary
     # asyncio.create_task(scheduler_loop())
 
 client.run(DISCORD_TOKEN)

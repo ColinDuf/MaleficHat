@@ -61,6 +61,17 @@ def create_db():
     );
     """)
 
+    # Création de la table leaderboard
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS leaderboard (
+        guild_id TEXT,
+    leaderboard_id TEXT,
+    player_puuid TEXT,
+    PRIMARY KEY (guild_id, leaderboard_id, player_puuid),
+    FOREIGN KEY (player_puuid) REFERENCES players(puuid)
+    );
+    """)
+
     # Enregistrement des modifications et fermeture de la connexion
     conn.commit()
     conn.close()

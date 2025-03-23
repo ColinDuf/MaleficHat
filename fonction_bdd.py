@@ -1,5 +1,4 @@
 import sqlite3
-
 import discord
 from discord import app_commands
 
@@ -17,7 +16,7 @@ def get_connection():
 
 def insert_player(puuid, username, summoner_id):
     """
-    Insère un nouveau joueur dans la table players si il n'existe pas déjà.
+    Insère un nouveau joueur dans la table players s'il n'existe pas déjà.
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -91,6 +90,25 @@ def get_registration(player_puuid, guild_id):
     registration = cursor.fetchone()
     conn.close()
     return registration
+
+
+def get_all_registrations():
+    """
+    Récupère toutes les inscriptions en effectuant une jointure entre registrations et players.
+    Retourne une liste de tuples :
+    (player_puuid, guild_id, channel_id, last_match_id, tier, rank, lp, summoner_id, username)
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    query = """
+        SELECT r.player_puuid, r.guild_id, r.channel_id, r.last_match_id, r.tier, r.rank, r.lp, p.summoner_id, p.username
+        FROM registrations r
+        JOIN players p ON r.player_puuid = p.puuid
+    """
+    cursor.execute(query)
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
 
 
 async def username_autocomplete(interaction: discord.Interaction, current: str):
@@ -177,7 +195,7 @@ def delete_registration(player_puuid, guild_id):
 
 def insert_guild(guild_id, leaderboard_channel_id):
     """
-    Insère un nouveau serveur (guild) avec son canal de leaderboard, si il n'existe pas.
+    Insère un nouveau serveur (guild) avec son canal de leaderboard, s'il n'existe pas.
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -194,7 +212,7 @@ def insert_guild(guild_id, leaderboard_channel_id):
 def get_guild(guild_id):
     """
     Récupère les informations d'un serveur (guild) à partir de son guild_id.
-    Retourne un tuple ou None si non trouvé.
+    Retourne un tuple ou None si non trouvée.
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -248,6 +266,56 @@ def get_all_registrations():
         JOIN players p ON r.player_puuid = p.puuid
     """
     cursor.execute(query)
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
+# ----- Opérations sur la table leaderboard -----
+
+def insert_leaderboard_member(guild_id, leaderboard_id, player_puuid):
+    """
+    Ajoute un joueur au leaderboard en insérant une ligne dans la table leaderboard.
+    Si le joueur est déjà présent (grâce à INSERT OR IGNORE), aucune duplication n'est faite.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT OR IGNORE INTO leaderboard (guild_id, leaderboard_id, player_puuid)
+        VALUES (?, ?, ?)
+    """, (guild_id, leaderboard_id, player_puuid))
+    conn.commit()
+    conn.close()
+
+
+def delete_leaderboard_member(guild_id, leaderboard_id, player_puuid):
+    """
+    Supprime un joueur du leaderboard en supprimant la ligne correspondante dans la table leaderboard.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        DELETE FROM leaderboard
+        WHERE guild_id = ? AND leaderboard_id = ? AND player_puuid = ?
+    """, (guild_id, leaderboard_id, player_puuid))
+    conn.commit()
+    conn.close()
+
+
+def get_leaderboard_data(leaderboard_id, guild_id):
+    """
+    Récupère les données du leaderboard pour un channel donné dans un serveur.
+    Retourne une liste de tuples contenant (username, tier, rank, lp_24h, lp_7d).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT p.username, r.tier, r.rank, r.lp_24h, r.lp_7d
+        FROM leaderboard lm
+        JOIN players p ON lm.player_puuid = p.puuid
+        JOIN registrations r ON lm.player_puuid = r.player_puuid
+        WHERE lm.guild_id = ? AND lm.leaderboard_id = ?
+    """, (guild_id, leaderboard_id))
     rows = cursor.fetchall()
     conn.close()
     return rows
