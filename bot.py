@@ -542,9 +542,14 @@ async def check_ingame():
                 if champion_image_url:
                     embed.set_thumbnail(url=champion_image_url)
 
-                msg = await channel.send(embed=embed)
-                players_in_game.add(puuid)
-                players_in_game_messages[puuid] = msg
+                try:
+                    msg = await channel.send(embed=embed)
+                except discord.DiscordException as e:
+                    logging.error(f"[check_ingame] Failed to send in-game embed: {e}")
+                    msg = None
+                if msg:
+                    players_in_game.add(puuid)
+                    players_in_game_messages[puuid] = msg
 
             elif champion_id is None and puuid in players_in_game:
                 players_in_game.discard(puuid)
@@ -642,8 +647,8 @@ async def check_for_game_completion():
             if in_game_msg:
                 try:
                     await in_game_msg.delete()
-                except Exception:
-                    pass
+                except discord.DiscordException as e:
+                    logging.error(f"[check_for_game_completion] Failed to delete in-game message: {e}")
 
             alert_channel = client.get_channel(int(alert_channel_id))
             if alert_channel:
@@ -684,7 +689,10 @@ async def send_match_result_embed(channel, username, result, kills, deaths, assi
     embed.add_field(name="Damage", value=f"{damage}", inline=True)
     embed.add_field(name=lp_text, value=f"{'+' if lp_change > 0 else ''}{lp_change} LP", inline=True)
     embed.set_thumbnail(url=champion_image)
-    await channel.send(embed=embed)
+    try:
+        await channel.send(embed=embed)
+    except discord.DiscordException as e:
+        logging.error(f"[send_match_result_embed] Failed to send match result: {e}")
 
 @client.event
 async def on_ready():
