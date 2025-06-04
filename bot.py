@@ -667,7 +667,13 @@ async def check_for_game_completion():
                 logging.warning(f"[Leaderboard] Pas de salon configuré pour guilde {guild_id}")
 
             players_in_game.discard(puuid)
-            logging.info(f"[MATCH FINI] {username} : LP change = {lp_change}, new LP = {new_lp}")
+            # Log the result of the match in English with more details
+            lp_diff = new_lp - old_lp
+            sign = '+' if lp_diff >= 0 else ''
+            logging.info(
+                f"[MATCH FINISHED] {username}: last LP = {old_lp}, "
+                f"new LP = {new_lp}, change = {sign}{lp_diff}"
+            )
 
         await asyncio.sleep(10)
 
