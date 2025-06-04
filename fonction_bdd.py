@@ -1,51 +1,64 @@
 import sqlite3
-
-import discord
-from discord import app_commands
+from discord import app_commands, Interaction
 
 DB_PATH = "database.db"
 
 def get_connection():
-    """Retourne une connexion à la base de données SQLite."""
-    return sqlite3.connect(DB_PATH)
+    """Retourne une connexion SQLite avec les FK activées."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA foreign_keys = ON;")
+    return conn
 
-# ----- Opérations sur la table player -----
 
-def insert_player(summoner_id, puuid, username, guild_id, channel_id, last_match_id, tier, rank, lp, lp_24h=0, lp_7d=0):
+def insert_player(summoner_id: str,
+                  puuid: str,
+                  username: str,
+                  tier: str,
+                  rank: str,
+                  lp: int):
     """
-    Insère un joueur dans la table player s'il n'existe pas déjà.
-    On stocke ici aussi les informations d'inscription.
+    Insert or update des données globales du joueur.
     """
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM player WHERE puuid = ?", (puuid,))
-    if not cursor.fetchone():
-        cursor.execute(
-            """INSERT INTO player 
-            (summoner_id, puuid, username, guild_id, channel_id, last_match_id, tier, rank, lp, lp_24h, lp_7d)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (summoner_id, puuid, username, guild_id, channel_id, last_match_id, tier, rank, lp, lp_24h, lp_7d)
-        )
-        conn.commit()
+    c = conn.cursor()
+    # Insert initial si absent
+    c.execute("""
+              INSERT OR IGNORE INTO player
+              (puuid, username, summoner_id, tier, rank, lp, lp_24h, lp_7d, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+              """, (puuid, username, summoner_id, tier, rank, lp))
+    c.execute("""
+              UPDATE player
+              SET username = ?,
+                  summoner_id = ?,
+                  tier = ?,
+                  rank = ?,
+                  lp = ?,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE puuid = ?
+              """, (username, summoner_id, tier, rank, lp, puuid))
+    conn.commit()
     conn.close()
 
-def update_player(puuid, guild_id, channel_id=None, last_match_id=None,
-                  tier=None, rank=None, lp=None, lp_24h=None, lp_7d=None):
+def update_player_global(puuid: str,
+                         tier: str = None,
+                         rank: str = None,
+                         lp: int = None,
+                         lp_change: int = None,
+                         username: str = None):
     """
-    Met à jour les informations d'un joueur dans la table player.
-    Seules les valeurs non-None seront mises à jour.
-    """
-    conn = get_connection()
-    cursor = conn.cursor()
+    Met à jour les champs de la table player pour un joueur donné.
 
+    - Si lp_change != None : on **cumule** lp_change à lp_24h et lp_7d.
+    - Sinon, lp_24h et lp_7d ne sont pas modifiés (on ne les écrase pas).
+    - Les autres champs (tier, rank, lp, username) sont mis à jour uniquement s'ils sont non-None.
+    """
     updates = []
     params = []
-    if channel_id is not None:
-        updates.append("channel_id = ?")
-        params.append(channel_id)
-    if last_match_id is not None:
-        updates.append("last_match_id = ?")
-        params.append(last_match_id)
+
+    if username is not None:
+        updates.append("username = ?")
+        params.append(username)
     if tier is not None:
         updates.append("tier = ?")
         params.append(tier)
@@ -55,168 +68,272 @@ def update_player(puuid, guild_id, channel_id=None, last_match_id=None,
     if lp is not None:
         updates.append("lp = ?")
         params.append(lp)
-    if lp_24h is not None:
-        updates.append("lp_24h = ?")
-        params.append(lp_24h)
-    if lp_7d is not None:
-        updates.append("lp_7d = ?")
-        params.append(lp_7d)
 
-    if updates:
-        params.extend([puuid])
-        query = "UPDATE player SET " + ", ".join(updates) + " WHERE puuid = ?"
-        cursor.execute(query, tuple(params))
-        conn.commit()
-    conn.close()
+    # Cas de cumul : si lp_change fourni, on fait « lp_24h = lp_24h + lp_change » et même pour lp_7d
+    if lp_change is not None:
+        updates.append("lp_24h = COALESCE(lp_24h, 0) + ?")
+        params.append(lp_change)
+        updates.append("lp_7d  = COALESCE(lp_7d, 0)  + ?")
+        params.append(lp_change)
 
-def delete_player(puuid, guild_id):
-    """
-    Supprime un joueur de la table player pour un guild donné.
-    """
+    if not updates:
+        # Rien à mettre à jour → on sort
+        return
+
+    # Ajout de l’horodatage de mise à jour
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+
+    query = f"UPDATE player SET {', '.join(updates)} WHERE puuid = ?"
+    params.append(puuid)
+
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM player WHERE puuid = ? AND guild_id = ?", (puuid, guild_id))
+    c = conn.cursor()
+    c.execute(query, tuple(params))
     conn.commit()
     conn.close()
 
+# ----- Opérations sur la table player_guild (liaisons serveur) -----
 
-def get_player(puuid, guild_id):
+def insert_player_guild(puuid: str,
+                        guild_id: int,
+                        channel_id: int,
+                        last_match_id: str = None):
     """
-    Récupère les informations d'un joueur à partir de son puuid et du guild_id.
-    Retourne un tuple (summoner_id, puuid, username, guild_id, channel_id, last_match_id, tier, rank, lp, lp_24h, lp_7d)
-    ou None si non trouvé.
+    Associe un joueur à une guilde et au salon d'alerte, avec son dernier match.
     """
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM player WHERE puuid = ? AND guild_id = ?", (puuid, guild_id))
-    player = cursor.fetchone()
+    c = conn.cursor()
+    c.execute("""
+        INSERT OR REPLACE INTO player_guild
+          (player_puuid, guild_id, channel_id, last_match_id)
+        VALUES (?, ?, ?, ?)
+    """, (puuid, guild_id, channel_id, last_match_id))
+    conn.commit()
     conn.close()
-    return player
 
+def update_player_guild(puuid: str,
+                        guild_id: int,
+                        channel_id: int = None,
+                        last_match_id: str = None):
+    """
+    Met à jour les champs de la table player_guild pour une paire joueur↔guilde.
+    Seuls channel_id et last_match_id non-None sont pris en compte.
+    """
+    updates = []
+    params = []
 
-def get_player_by_username(username):
-    """
-    Récupère les informations d'un joueur à partir de son username.
-    Retourne un tuple (summoner_id, puuid, username, guild_id, channel_id, last_match_id, tier, rank, lp, lp_24h, lp_7d)
-    ou None si non trouvé.
-    """
+    if channel_id is not None:
+        updates.append("channel_id = ?")
+        params.append(channel_id)
+    if last_match_id is not None:
+        updates.append("last_match_id = ?")
+        params.append(last_match_id)
+
+    if not updates:
+        return
+
+    query = f"UPDATE player_guild SET {', '.join(updates)} WHERE player_puuid = ? AND guild_id = ?"
+    params.extend([puuid, guild_id])
+
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM player WHERE username = ?", (username,))
-    player = cursor.fetchone()
+    c = conn.cursor()
+    c.execute(query, tuple(params))
+    conn.commit()
     conn.close()
-    return player
+
+def delete_player(puuid: str, guild_id: int):
+    """Supprime l'inscription d'un joueur dans une guilde."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM player_guild WHERE player_puuid = ? AND guild_id = ?", (puuid, guild_id))
+    conn.commit()
+    conn.close()
+
+# ----- Requêtes de consultation -----
+
+def get_player(puuid: str, guild_id: int):
+    """Récupère un joueur pour une guilde via jointure."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+              SELECT
+                  p.summoner_id, p.puuid, p.username,
+                  pg.guild_id, pg.channel_id, pg.last_match_id,
+                  p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
+              FROM player p
+                       JOIN player_guild pg ON p.puuid = pg.player_puuid
+              WHERE p.puuid = ? AND pg.guild_id = ?
+              """, (puuid, guild_id))
+    row = c.fetchone()
+    conn.close()
+    return row
 
 def get_all_players():
-    """
-    Récupère tous les joueurs enregistrés.
-    Retourne une liste de tuples.
-    """
+    """Liste tous les joueurs et leurs associations."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT summoner_id, puuid, username, guild_id, channel_id, last_match_id, tier, rank, lp, lp_24h, lp_7d
-        FROM player
-    """)
-    rows = cursor.fetchall()
+    c = conn.cursor()
+    c.execute("""
+              SELECT
+                  p.summoner_id, p.puuid, p.username,
+                  pg.guild_id, pg.channel_id, pg.last_match_id,
+                  p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
+              FROM player p
+                       JOIN player_guild pg ON p.puuid = pg.player_puuid
+              """)
+    rows = c.fetchall()
     conn.close()
     return rows
 
-async def username_autocomplete(interaction: discord.Interaction, current: str):
-    guild_id = str(interaction.guild.id)
+def get_player_by_username(username: str, guild_id: int = None):
+    """Récupère un joueur par username, optionnellement filtré par guilde."""
     conn = get_connection()
-    cursor = conn.cursor()
-    # Ici, on suppose que le joueur est enregistré dans un seul guild (sinon il faudra ajuster)
-    cursor.execute("""
-        SELECT username
-        FROM player
-        WHERE guild_id = ?
-    """, (guild_id,))
-    rows = cursor.fetchall()
+    c = conn.cursor()
+    if guild_id is not None:
+        c.execute("""
+                  SELECT
+                      p.summoner_id, p.puuid, p.username,
+                      pg.guild_id, pg.channel_id, pg.last_match_id,
+                      p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
+                  FROM player p
+                           JOIN player_guild pg ON p.puuid = pg.player_puuid
+                  WHERE p.username = ? AND pg.guild_id = ?
+                  """, (username, guild_id))
+        result = c.fetchone()
+    else:
+        c.execute("SELECT puuid, username FROM player WHERE username = ?", (username,))
+        result = c.fetchone()
     conn.close()
-    usernames = [row[0] for row in rows]
+    return result
+
+async def username_autocomplete(interaction: Interaction, current: str):
+    """Autocomplétion des usernames pour une guilde donnée."""
+    guild_id = interaction.guild.id
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+              SELECT p.username
+              FROM player p
+                       JOIN player_guild pg ON p.puuid = pg.player_puuid
+              WHERE pg.guild_id = ?
+              """, (guild_id,))
+    rows = c.fetchall()
+    conn.close()
+    choices = [row[0] for row in rows]
     return [
-        app_commands.Choice(name=username, value=username)
-        for username in usernames if current.lower() in username.lower()
+        app_commands.Choice(name=choice, value=choice)
+        for choice in choices if current.lower() in choice.lower()
     ]
 
 # ----- Opérations sur la table guild -----
 
-def insert_guild(guild_id, leaderboard_channel_id):
+def insert_guild(guild_id: int, leaderboard_channel_id: int):
+    """Ajoute ou met à jour le channel de leaderboard d'une guilde."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM guild WHERE guild_id = ?", (guild_id,))
-    if not cursor.fetchone():
-        cursor.execute(
-            "INSERT INTO guild (guild_id, leaderboard_channel_id) VALUES (?, ?)",
-            (guild_id, leaderboard_channel_id)
-        )
-        conn.commit()
+    c = conn.cursor()
+    c.execute(
+        "INSERT OR REPLACE INTO guild (guild_id, leaderboard_channel_id) VALUES (?, ?)",
+        (guild_id, leaderboard_channel_id)
+    )
+    conn.commit()
     conn.close()
 
-def get_guild(guild_id):
+def get_guild(guild_id: int):
+    """Récupère les infos d'une guilde si existante."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM guild WHERE guild_id = ?", (guild_id,))
-    guild = cursor.fetchone()
+    c = conn.cursor()
+    c.execute("SELECT guild_id, leaderboard_channel_id FROM guild WHERE guild_id = ?", (guild_id,))
+    result = c.fetchone()
     conn.close()
-    return guild
-
-# ----- Opérations sur la table match -----
-
-def insert_match(match_id, player_puuid, guild_id, result, champion, kills, deaths, assists, damage, duration):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM match WHERE match_id = ?", (match_id,))
-    if not cursor.fetchone():
-        cursor.execute("""
-            INSERT INTO match 
-            (match_id, player_puuid, guild_id, result, champion, kills, deaths, assists, damage, duration)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (match_id, player_puuid, guild_id, result, champion, kills, deaths, assists, damage, duration))
-        conn.commit()
-    conn.close()
-
-def get_matches(player_puuid, guild_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM match WHERE player_puuid = ? AND guild_id = ?", (player_puuid, guild_id))
-    matches = cursor.fetchall()
-    conn.close()
-    return matches
+    return result
 
 # ----- Opérations sur la table leaderboard -----
 
-def insert_leaderboard_member(guild_id, leaderboard_id, player_puuid):
+def get_leaderboard_by_guild(guild_id: int):
+    """Renvoie le leaderboard_id pour une guilde si créé, sinon None."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT OR IGNORE INTO leaderboard (guild_id, leaderboard_id, player_puuid)
-        VALUES (?, ?, ?)
-    """, (guild_id, leaderboard_id, player_puuid))
+    c = conn.cursor()
+    c.execute("SELECT leaderboard_id FROM leaderboard WHERE guild_id = ?", (guild_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def insert_leaderboard(guild_id: int) -> int:
+    """Crée un nouveau leaderboard pour la guilde et renvoie son ID."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("INSERT INTO leaderboard (guild_id) VALUES (?)", (guild_id,))
+    lb_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return lb_id
+
+def insert_leaderboard_member(leaderboard_id: int, player_puuid: str):
+    """Ajoute un joueur au leaderboard."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        "INSERT OR IGNORE INTO leaderboard_player (leaderboard_id, player_puuid) VALUES (?, ?)",
+        (leaderboard_id, player_puuid)
+    )
     conn.commit()
     conn.close()
 
-def delete_leaderboard_member(guild_id, leaderboard_id, player_puuid):
+def delete_leaderboard_member(leaderboard_id: int, player_puuid: str):
+    """Retire un joueur du leaderboard."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        DELETE FROM leaderboard
-        WHERE guild_id = ? AND leaderboard_id = ? AND player_puuid = ?
-    """, (guild_id, leaderboard_id, player_puuid))
+    c = conn.cursor()
+    c.execute(
+        "DELETE FROM leaderboard_player WHERE leaderboard_id = ? AND player_puuid = ?",
+        (leaderboard_id, player_puuid)
+    )
     conn.commit()
     conn.close()
 
-def get_leaderboard_data(leaderboard_id, guild_id):
+def get_leaderboard_data(leaderboard_id: int, guild_id: int):
+    """
+    Récupère les données à afficher pour le leaderboard :
+    username, tier, rank, current LP, LP 24h, LP 7j
+    """
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT p.username, pl.tier, pl.rank, pl.lp_24h, pl.lp_7d
-        FROM leaderboard lm
-        JOIN player p ON lm.player_puuid = p.puuid
-        JOIN player pl ON lm.player_puuid = pl.puuid
-        WHERE lm.guild_id = ? AND lm.leaderboard_id = ?
-    """, (guild_id, leaderboard_id))
-    rows = cursor.fetchall()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT
+            p.username,
+            p.tier,
+            p.rank,
+            p.lp,       -- ajout de la colonne current LP
+            p.lp_24h,
+            p.lp_7d
+        FROM leaderboard    AS lb
+                 JOIN leaderboard_player AS lp_player
+                      ON lb.leaderboard_id = lp_player.leaderboard_id
+                 JOIN player        AS p
+                      ON lp_player.player_puuid = p.puuid
+        WHERE lb.guild_id       = ?
+          AND lb.leaderboard_id = ?
+        """,
+        (guild_id, leaderboard_id)
+    )
+    rows = c.fetchall()
     conn.close()
     return rows
+
+
+# ----- Remise à zéro des LP -----
+
+def reset_all_lp_24h():
+    """Remet à zéro lp_24h pour tous les joueurs."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("UPDATE player SET lp_24h = 0")
+    conn.commit()
+    conn.close()
+
+def reset_all_lp_7d():
+    """Remet à zéro lp_7d pour tous les joueurs."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("UPDATE player SET lp_7d = 0")
+    conn.commit()
+    conn.close()

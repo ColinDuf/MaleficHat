@@ -4,109 +4,210 @@ import logging
 
 from fonction_bdd import (
     get_guild,
-    get_leaderboard_data,
     insert_guild,
-    get_player_by_username, insert_leaderboard_member,
-    # update_registration is utilisé dans d'autres parties, mais pour le leaderboard, on utilise notre nouvelle table
+    get_leaderboard_by_guild,
+    insert_leaderboard,
+    get_player_by_username,
+    insert_leaderboard_member,
+    delete_leaderboard_member,
+    get_leaderboard_data, username_autocomplete
 )
-# On importera localement les fonctions d'insertion/suppression dans leaderboard_members pour éviter les cycles.
-# Importez l'objet global "tree" et "client" depuis bot.py, si nécessaire
 
-
-@app_commands.command(name="leaderboard", description="Créer un leaderboard dans un nouveau channel")
-@app_commands.describe(channel_name="Le nom du nouveau channel pour le leaderboard")
-async def leaderboard(interaction: discord.Interaction, channel_name: str):
+# ─── /leaderboard ───────────────────────────────────────────────────────────────
+@app_commands.command(
+    name="leaderboard",
+    description="Créer un nouveau salon pour le leaderboard de cette guilde"
+)
+@app_commands.describe(
+    channel_name="Nom du salon à créer pour le leaderboard"
+)
+async def leaderboard_cmd(
+        interaction: discord.Interaction,
+        channel_name: str
+):
     guild = interaction.guild
     if guild is None:
-        await interaction.response.send_message("Impossible de récupérer le serveur.", ephemeral=True)
-        return
-
-    # Créer le nouveau channel pour le leaderboard
-    new_channel = await guild.create_text_channel(name=channel_name)
-    guild_id = str(guild.id)
-
-    # Insérer le channel dans la BDD (la table 'guilds' stocke ici l'ID du channel du leaderboard)
-    insert_guild(guild_id, str(new_channel.id))
-    # Met à jour l'embed du leaderboard en passant le nouveau channel comme leaderboard_id
-    await update_leaderboard_embed(new_channel.id, interaction.client, guild_id)
-
-    await interaction.response.send_message(f"Leaderboard créé dans {new_channel.mention}.", ephemeral=True)
-
-@app_commands.command(name="addleaderboard", description="Ajouter un joueur au leaderboard")
-@app_commands.describe(username="Le nom du joueur (format: USERNAME#TAG)")
-async def addleaderboard(interaction: discord.Interaction, username: str):
-    guild_id = str(interaction.guild.id)
-    username = username.upper()
-    player = get_player_by_username(username)
-    if not player:
-        await interaction.response.send_message(f"Le joueur {username} n'est pas enregistré.", ephemeral=True)
-        return
-    puuid = player[1]
-
-    # Pour ajouter un joueur au leaderboard, on insère une ligne dans la table 'leaderboard_members'
-    # Récupérer l'ID du leaderboard à partir de la table 'guilds'
-    guild_data = get_guild(guild_id)
-    if not guild_data:
-        await interaction.response.send_message("Aucun leaderboard configuré dans ce serveur.", ephemeral=True)
-        return
-    leaderboard_id = guild_data[1]  # l'ID du channel du leaderboard
-    insert_leaderboard_member(guild_id, leaderboard_id, puuid)
-    await interaction.response.send_message(f"Le joueur {username} a été ajouté au leaderboard.", ephemeral=True)
-    await update_leaderboard_embed(leaderboard_id, interaction.client, guild_id)
-
-@app_commands.command(name="removeleaderboard", description="Supprimer un joueur du leaderboard")
-@app_commands.describe(username="Le nom du joueur (format: USERNAME#TAG)")
-async def removeleaderboard(interaction: discord.Interaction, username: str):
-    guild_id = str(interaction.guild.id)
-    username = username.upper()
-    player = get_player_by_username(username)
-    if not player:
-        await interaction.response.send_message(f"Le joueur {username} n'est pas enregistré.", ephemeral=True)
-        return
-    puuid = player[1]
-    from fonction_bdd import delete_leaderboard_member  # Import local pour éviter un cycle
-    guild_data = get_guild(guild_id)
-    if not guild_data:
-        await interaction.response.send_message("Aucun leaderboard configuré dans ce serveur.", ephemeral=True)
-        return
-    leaderboard_id = guild_data[1]
-    delete_leaderboard_member(guild_id, leaderboard_id, puuid)
-    await interaction.response.send_message(f"Le joueur {username} a été retiré du leaderboard.", ephemeral=True)
-    await update_leaderboard_embed(leaderboard_id, interaction.client, guild_id)
-
-async def update_leaderboard_embed(leaderboard_id, bot, guild_id):
-    """
-    Met à jour l'embed du leaderboard selon la nouvelle table 'leaderboard'.
-    """
-    guild_obj = bot.get_guild(int(guild_id))
-    channel = discord.utils.get(guild_obj.text_channels, id=int(leaderboard_id))
-    if not channel:
-        logging.warning(f"Leaderboard channel {leaderboard_id} not found")
-        return
-    # Récupère uniquement les membres du leaderboard depuis la nouvelle table
-    rows = get_leaderboard_data(leaderboard_id, guild_id)
-    embed = discord.Embed(
-        title="Leaderboard",
-        description="Classement des joueurs",
-        color=discord.Color.blue()
-    )
-    for row in rows:
-        # On suppose que get_leaderboard_data retourne (username, tier, rank, lp_24h, lp_7d)
-        username, tier, rank_val, lp_24h, lp_7d = row
-        embed.add_field(
-            name=username,
-            value=f"Rank: {tier} {rank_val}\nLP (24h): {lp_24h}\nLP (7j): {lp_7d}",
-            inline=False
+        return await interaction.response.send_message(
+            "Impossible de récupérer le serveur.",
+            ephemeral=True
         )
-    async for message in channel.history(limit=50):
-        if message.author == guild_obj.me and message.embeds and "Leaderboard" in message.embeds[0].title:
-            await message.edit(embed=embed)
+
+    # 1) Création du salon
+    new_channel = await guild.create_text_channel(name=channel_name)
+    guild_id = guild.id
+
+    # 2) Enregistrement du salon comme channel de leaderboard
+    insert_guild(guild_id, new_channel.id)
+
+    lb_id = get_leaderboard_by_guild(guild_id)
+    if lb_id is None:
+        lb_id = insert_leaderboard(guild_id)
+
+    await update_leaderboard_message(new_channel.id, interaction.client, guild_id)
+
+    await interaction.response.send_message(
+        f"✅ Leaderboard créé dans {new_channel.mention}.",
+        ephemeral=True
+    )
+    return None
+
+
+@app_commands.command(
+    name="addleaderboard",
+    description="Ajouter un joueur déjà enregistré au leaderboard"
+)
+@app_commands.describe(
+    username="Pseudo du joueur (format: USERNAME#TAG)"
+)
+@app_commands.autocomplete(username=username_autocomplete)
+async def add_leaderboard_cmd(
+        interaction: discord.Interaction,
+        username: str
+):
+    guild_id = interaction.guild.id
+    username = username.upper()
+
+    # Vérifie que le joueur est enregistr�
+    player = get_player_by_username(username, guild_id)
+    if not player:
+        return await interaction.response.send_message(
+            f"❌ Le joueur {username} n'est pas enregistré ici.",
+            ephemeral=True
+        )
+    puuid = player[1]
+
+    # Récupère l'ID du leaderboard (ligne dédiée)
+    lb_id = get_leaderboard_by_guild(guild_id)
+    if lb_id is None:
+        return await interaction.response.send_message(
+            "❌ Aucune configuration de leaderboard trouvée. Lancez d'abord `/leaderboard`.",
+            ephemeral=True
+        )
+
+    # Insertion en BDD
+    insert_leaderboard_member(lb_id, puuid)
+    logging.info(f"[BDD] Ajout de {puuid} au leaderboard #{lb_id}")
+
+    channel_id = get_guild(guild_id)[1]
+    await update_leaderboard_message(channel_id, interaction.client, guild_id)
+
+    await interaction.response.send_message(
+        f"✅ Joueur **{username}** ajouté au leaderboard.",
+        ephemeral=True
+    )
+
+# ─── /removeleaderboard ─────────────────────────────────────────────────────────
+@app_commands.command(
+    name="removeleaderboard",
+    description="Retirer un joueur du leaderboard"
+)
+@app_commands.describe(
+    username="Pseudo du joueur (format: USERNAME#TAG)"
+)
+
+@app_commands.autocomplete(username=username_autocomplete)
+async def remove_leaderboard_cmd(
+        interaction: discord.Interaction,
+        username: str
+):
+    guild_id = interaction.guild.id
+    username = username.upper()
+
+    # Vérifie que le joueur est enregistré
+    player = get_player_by_username(username, guild_id)
+    if not player:
+        return await interaction.response.send_message(
+            f"❌ Le joueur {username} n'est pas enregistré ici.",
+            ephemeral=True
+        )
+    puuid = player[1]
+
+    lb_id = get_leaderboard_by_guild(guild_id)
+    if lb_id is None:
+        return await interaction.response.send_message(
+            "❌ Aucune configuration de leaderboard trouvée.",
+            ephemeral=True
+        )
+
+    delete_leaderboard_member(lb_id, puuid)
+    logging.info(f"[BDD] Suppression de {puuid} du leaderboard #{lb_id}")
+
+    channel_id = get_guild(guild_id)[1]
+    await update_leaderboard_message(channel_id, interaction.client, guild_id)
+
+    await interaction.response.send_message(
+        f"✅ Joueur **{username}** retiré du leaderboard.",
+        ephemeral=True
+    )
+
+# ─── Fonction de mise à jour d’embed ────────────────────────────────────────────
+async def update_leaderboard_message(channel_id: int, bot: discord.Client, guild_id: int):
+    """
+    Met à jour ou envoie un message texte monospace contenant
+    le classement trié des joueurs du leaderboard.
+    """
+    # 1) Récupère le leaderboard_id et les données
+    lb_id = get_leaderboard_by_guild(guild_id)
+    if lb_id is None:
+        return
+    rows = get_leaderboard_data(lb_id, guild_id)
+    # rows = List[ (username, tier, rank, current_lp, lp24h, lp7d) ]
+
+    # 1.5) Tri du classement : catégorie → division → LP courant
+    rank_order = [
+        'IRON', 'BRONZE', 'SILVER', 'GOLD',
+        'PLATINUM', 'EMERALD', 'DIAMOND', 'MASTER',
+        'GRANDMASTER', 'CHALLENGER'
+    ]
+    tier_order = ['IV', 'III', 'II', 'I']  # I = meilleur
+    rows.sort(key=lambda x: (
+        -rank_order.index(x[2]),     # meilleur rang en premier
+        -tier_order.index(x[1]),     # meilleure division en premier
+        -x[3]                        # plus de LP courant en premier
+    ))
+
+    # 2) Prépare header et séparateur
+    header    = "Username                      | Rank              | LP (24h) | LP (7j)"
+    separator = "-" * len(header)
+
+    # 3) Calcule la largeur de chaque colonne à partir du header
+    parts  = header.split("|")
+    user_w = len(parts[0])
+    rank_w = len(parts[1])
+    lp24_w = len(parts[2])
+    lp7_w  = len(parts[3])
+
+    # 4) Construit les lignes du tableau
+    lines = [header, separator]
+    for username, tier, rank_val, current_lp, lp24h, lp7d in rows:
+        # Affiche "GOLD I 30 LP" par exemple
+        rank_display = f"{rank_val} {tier} {current_lp} LP" if rank_val and tier else "Unranked"
+        user_col = username.ljust(user_w)
+        rank_col = rank_display.ljust(rank_w)
+        lp24_col = str(lp24h).rjust(lp24_w)
+        lp7_col  = str(lp7d).rjust(lp7_w)
+        lines.append(f"{user_col}|{rank_col}|{lp24_col}|{lp7_col}")
+
+    # 5) Assemble le bloc de code Markdown
+    table = "```" + "\n".join(lines) + "```"
+
+    # 6) Recherche un ancien message à éditer
+    guild_obj = bot.get_guild(guild_id)
+    channel   = guild_obj.get_channel(channel_id)
+    async for msg in channel.history(limit=50):
+        if (
+                msg.author == guild_obj.me
+                and msg.content.startswith("```")
+                and header in msg.content
+        ):
+            await msg.edit(content=table)
             return
-    await channel.send(embed=embed)
 
-# Optionnel : Une fonction de setup pour ajouter les commandes dans l'arbre global
+    # 7) Sinon, envoie un nouveau message
+    await channel.send(table)
+
+
 def setup_tree(tree_obj: app_commands.CommandTree):
-    tree_obj.add_command(leaderboard)
-    tree_obj.add_command(addleaderboard)
-    tree_obj.add_command(removeleaderboard)
-
+    tree_obj.add_command(leaderboard_cmd)
+    tree_obj.add_command(add_leaderboard_cmd)
+    tree_obj.add_command(remove_leaderboard_cmd)

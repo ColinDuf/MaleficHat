@@ -1,64 +1,65 @@
 import logging
 import sqlite3
 
+DB_PATH = "database.db"
+
 def create_db():
     logging.info("Starting DB creation...")
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("PRAGMA foreign_keys = ON;")
 
-    # Table player : contient les informations du joueur ainsi que ses données d'inscription
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS player (
-        summoner_id TEXT NOT NULL,
-        puuid TEXT PRIMARY KEY,
-        username TEXT NOT NULL,
-        guild_id TEXT,             -- Le guild dans lequel le joueur est enregistré
-        channel_id TEXT,           -- Le channel où il a été enregistré
-        last_match_id TEXT,        -- Le dernier match enregistré
-        tier TEXT,
-        rank TEXT,
-        lp INTEGER,
-        lp_24h INTEGER DEFAULT 0,
-        lp_7d INTEGER DEFAULT 0
-    );
-    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS guild (
+            guild_id INTEGER PRIMARY KEY,
+            leaderboard_channel_id INTEGER
+        );
+        """)
 
-    # Table guild : pour stocker le channel du leaderboard par guild
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS guild (
-        guild_id TEXT PRIMARY KEY,
-        leaderboard_channel_id TEXT
-    );
-    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS player (
+            username TEXT NOT NULL,
+            puuid TEXT PRIMARY KEY,
+            summoner_id TEXT NOT NULL,
+            rank TEXT,
+            tier TEXT,
+            lp INTEGER,
+            lp_24h INTEGER,
+            lp_7d INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
 
-    # Table match : pour enregistrer l'historique des parties (match au singulier)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS match (
-        match_id TEXT PRIMARY KEY,
-        player_puuid TEXT,
-        guild_id TEXT,
-        result TEXT,
-        champion TEXT,
-        kills INTEGER,
-        deaths INTEGER,
-        assists INTEGER,
-        damage INTEGER,
-        duration TEXT,
-        match_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (player_puuid) REFERENCES player(puuid)
-    );
-    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS player_guild (
+            player_puuid TEXT    NOT NULL,
+            guild_id      INTEGER NOT NULL,
+            channel_id    INTEGER NOT NULL,
+            last_match_id TEXT,
+            PRIMARY KEY (player_puuid, guild_id),
+            FOREIGN KEY (player_puuid) REFERENCES player(puuid),
+            FOREIGN KEY (guild_id)     REFERENCES guild(guild_id)
+            );
+        """)
 
-    # Table leaderboard (reste inchangée, elle est déjà au singulier)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS leaderboard (
-        guild_id TEXT,
-        leaderboard_id TEXT,
-        player_puuid TEXT,
-        PRIMARY KEY (guild_id, leaderboard_id, player_puuid),
-        FOREIGN KEY (player_puuid) REFERENCES player(puuid)
-    );
-    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS leaderboard (
+        leaderboard_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id       INTEGER NOT NULL,
+        FOREIGN KEY (guild_id) REFERENCES guild(guild_id)
+            );
+        """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS leaderboard_player (
+            leaderboard_id INTEGER NOT NULL,
+            player_puuid   TEXT    NOT NULL,
+            PRIMARY KEY (leaderboard_id, player_puuid),
+            FOREIGN KEY (leaderboard_id) REFERENCES leaderboard(leaderboard_id),
+            FOREIGN KEY (player_puuid)   REFERENCES player(puuid)
+            );
+        """)
 
     conn.commit()
     conn.close()
