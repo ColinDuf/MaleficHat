@@ -204,7 +204,10 @@ async def update_leaderboard_message(channel_id: int, bot: discord.Client, guild
             return
 
     # 7) Sinon, envoie un nouveau message
-    await channel.send(table)
+    try:
+        await channel.send(table)
+    except discord.DiscordException as e:
+        logging.error(f"[update_leaderboard_message] Failed to send leaderboard: {e}")
 
 
 def setup_tree(tree_obj: app_commands.CommandTree):
