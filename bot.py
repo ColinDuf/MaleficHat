@@ -5,6 +5,7 @@ import os
 import logging
 import asyncio
 from datetime import timedelta
+from threading import Lock
 from dotenv import load_dotenv
 from create_db import create_db
 from leaderboard_tasks import reset_lp_scheduler
@@ -40,6 +41,27 @@ players_in_game: set[str] = set()
 players_in_game_messages: dict[str, discord.Message] = {}
 CHAMPION_MAPPING: dict[int, str] = {}
 
+# ----------------------------------------------------------------------------
+# API call tracking
+# ----------------------------------------------------------------------------
+API_CALL_COUNT = 0
+API_CALL_LOCK = Lock()
+
+def increment_api_call() -> None:
+    global API_CALL_COUNT
+    with API_CALL_LOCK:
+        API_CALL_COUNT += 1
+
+async def log_api_usage() -> None:
+    """Periodically log the number of API calls in the last 10 seconds."""
+    global API_CALL_COUNT
+    while True:
+        await asyncio.sleep(10)
+        with API_CALL_LOCK:
+            count = API_CALL_COUNT
+            API_CALL_COUNT = 0
+        logging.info(f"API calls in last 10s: {count}")
+
 ##############################################################################
 # Fonctions d'accès à l'API Riot (appel synchrones via requests)
 ##############################################################################
@@ -48,6 +70,7 @@ def get_puuid(username, hashtag):
     url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{username}/{hashtag}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     try:
+        increment_api_call()
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         return response.json().get('puuid')
@@ -59,6 +82,7 @@ def get_summoner_id(puuid):
     url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     try:
+        increment_api_call()
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         return response.json().get('id')
@@ -70,6 +94,7 @@ def get_summoner_rank(summoner_id):
     url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     try:
+        increment_api_call()
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         ranks = response.json()
@@ -85,6 +110,7 @@ def get_last_match(puuid, nb_last_match):
     url = f"https://europe.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type=ranked&count={nb_last_match}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     try:
+        increment_api_call()
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         matches = response.json()
@@ -103,6 +129,7 @@ def get_ddragon_latest_version() -> str:
     """
     try:
         versions_url = "https://ddragon.leagueoflegends.com/api/versions.json"
+        increment_api_call()
         response = requests.get(versions_url)
         response.raise_for_status()
         versions = response.json()
@@ -127,6 +154,7 @@ def init_champion_mapping() -> None:
 
     try:
         url_champs = f"https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json"
+        increment_api_call()
         resp = requests.get(url_champs)
         resp.raise_for_status()
         data = resp.json().get("data", {})
@@ -155,6 +183,7 @@ def get_match_details(match_id: str, puuid: str):
     url = f"https://europe.api.riotgames.com/lol/match/v5/matches/{match_id}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     try:
+        increment_api_call()
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         match_data = response.json()
@@ -219,6 +248,7 @@ async def check_username_changes():
 
             try:
                 async with aiohttp.ClientSession() as session:
+                    increment_api_call()
                     async with session.get(url, headers=headers) as response:
                         if response.status == 200:
                             data = await response.json()
@@ -280,25 +310,45 @@ async def is_in_game(puuid: str) -> int | None:
     url = f"https://euw1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if data.get("gameQueueConfigId") != 420:
+    retries = 3
+    backoff = 1
+
+    for attempt in range(retries):
+        try:
+            async with aiohttp.ClientSession() as session:
+                increment_api_call()
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data.get("gameQueueConfigId") != 420:
+                            return None
+                        for participant in data.get("participants", []):
+                            if participant.get("puuid") == puuid:
+                                return participant.get("championId")
                         return None
-                    for participant in data.get("participants", []):
-                        if participant.get("puuid") == puuid:
-                            return participant.get("championId")
-                    return None
-                elif response.status == 404:
-                    return None
-                else:
-                    logging.warning(f"[Spectator] statut inattendu {response.status} pour puuid={puuid}")
-                    return None
-    except aiohttp.ClientError as e:
-        logging.error(f"Erreur HTTP Spectator V5 : {e}")
-        return None
+                    elif response.status == 404:
+                        return None
+                    elif response.status in {502, 503, 504} and attempt < retries - 1:
+                        logging.warning(
+                            f"[Spectator] statut {response.status} - retry {attempt + 1}/{retries}"
+                        )
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+                        continue
+                    else:
+                        logging.warning(
+                            f"[Spectator] statut inattendu {response.status} pour puuid={puuid}"
+                        )
+                        return None
+        except aiohttp.ClientError as e:
+            logging.error(f"Erreur HTTP Spectator V5 : {e}")
+            if attempt < retries - 1:
+                await asyncio.sleep(backoff)
+                backoff *= 2
+                continue
+            return None
+
+    return None
 
 
 ###############################################################################
@@ -695,6 +745,7 @@ async def on_ready():
     asyncio.create_task(check_ingame())
     asyncio.create_task(check_for_game_completion())
     asyncio.create_task(check_username_changes())
+    asyncio.create_task(log_api_usage())
     asyncio.create_task(reset_lp_scheduler(client))
 
 
