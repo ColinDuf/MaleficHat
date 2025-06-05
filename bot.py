@@ -4,7 +4,7 @@ from discord import app_commands
 import os
 import logging
 import asyncio
-from datetime import timedelta, datetime
+from datetime import timedelta
 from dotenv import load_dotenv
 from create_db import create_db
 from leaderboard_tasks import reset_lp_scheduler
@@ -43,6 +43,9 @@ logging.getLogger().addHandler(discord_handler)
 players_in_game: set[tuple[str, int]] = set()
 players_in_game_messages: dict[tuple[str, int], discord.Message] = {}
 CHAMPION_MAPPING: dict[int, str] = {}
+recent_match_lp_changes: dict[tuple[str, str], tuple[int, float]] = {}
+
+MATCH_CACHE_EXPIRATION = 3600  # seconds
 
 RETRY_STATUS_CODES = {502, 503, 504}
 
@@ -191,6 +194,7 @@ def get_match_details(match_id: str, puuid: str):
                 # Résultat (victoire/défaite)
                 result = ":green_circle:" if participant.get("win") else ":red_circle:"
                 champion = participant.get("championName", "")
+                champ_id = participant.get("championId")
                 kills = participant.get("kills", 0)
                 deaths = participant.get("deaths", 0)
                 assists = participant.get("assists", 0)
@@ -205,9 +209,10 @@ def get_match_details(match_id: str, puuid: str):
                     seconds = game_duration_seconds % 60
                     game_duration = f"{minutes}:{seconds:02d}"
 
+                champ_slug = CHAMPION_MAPPING.get(champ_id, champion)
                 champion_image = (
                     f"https://ddragon.leagueoflegends.com/cdn/"
-                    f"{ddragon_version}/img/champion/{champion}.png"
+                    f"{ddragon_version}/img/champion/{champ_slug}.png"
                 )
 
                 return (
@@ -615,7 +620,6 @@ async def check_ingame():
 
                 if champion_image_url:
                     embed.set_thumbnail(url=champion_image_url)
-                embed.timestamp = datetime.utcnow()
 
                 try:
                     msg = await channel.send(embed=embed)
@@ -644,9 +648,15 @@ async def check_for_game_completion():
       6) on retire le joueur de players_in_game
     """
 
-    global players_in_game, players_in_game_messages
+    global players_in_game, players_in_game_messages, recent_match_lp_changes
 
     while True:
+        now = time.time()
+        recent_match_lp_changes = {
+            k: v for k, v in recent_match_lp_changes.items()
+            if now - v[1] < MATCH_CACHE_EXPIRATION
+        }
+
         players = await async_get_all_players()
         player_map = {(row[1], row[3]): row for row in players}
 
@@ -685,37 +695,46 @@ async def check_for_game_completion():
                 continue
             result, champion, kills, deaths, assists, game_duration, champ_img, damage = details
 
-            new_rank_info = await asyncio.to_thread(get_summoner_rank, summoner_id)
-            if new_rank_info == "Unknown":
+            key = (puuid, new_match_id)
+            if key in recent_match_lp_changes:
+                lp_change = recent_match_lp_changes[key][0]
                 tier_str = old_tier
                 rank_str = old_rank
-                new_lp = old_lp
+                new_lp = old_lp + lp_change
             else:
-                try:
-                    rank_str, tier_str, lp_str, _ = new_rank_info.split()
-                    new_lp = int(lp_str)
-                except Exception as e:
-                    logging.error(f"Error parsing new rank info: {e}")
+                new_rank_info = await asyncio.to_thread(get_summoner_rank, summoner_id)
+                if new_rank_info == "Unknown":
                     tier_str = old_tier
                     rank_str = old_rank
                     new_lp = old_lp
+                else:
+                    try:
+                        rank_str, tier_str, lp_str, _ = new_rank_info.split()
+                        new_lp = int(lp_str)
+                    except Exception as e:
+                        logging.error(f"Error parsing new rank info: {e}")
+                        tier_str = old_tier
+                        rank_str = old_rank
+                        new_lp = old_lp
 
-            lp_change = calculate_lp_change(
-                old_tier, old_rank, old_lp,
-                new_tier=tier_str, new_rank=rank_str, new_lp=new_lp
-            )
+                lp_change = calculate_lp_change(
+                    old_tier, old_rank, old_lp,
+                    new_tier=tier_str, new_rank=rank_str, new_lp=new_lp
+                )
+                recent_match_lp_changes[key] = (lp_change, now)
+
+                update_player_global(
+                    puuid,
+                    tier=tier_str,
+                    rank=rank_str,
+                    lp=new_lp,
+                    lp_change=lp_change
+                )
 
             update_player_guild(
                 puuid,
                 guild_id,
                 last_match_id=new_match_id
-            )
-            update_player_global(
-                puuid,
-                tier=tier_str,
-                rank=rank_str,
-                lp=new_lp,
-                lp_change=lp_change
             )
 
             player_key = (puuid, guild_id)
@@ -766,7 +785,6 @@ async def send_match_result_embed(channel, username, result, kills, deaths, assi
     embed.add_field(name="Damage", value=f"{damage}", inline=True)
     embed.add_field(name=lp_text, value=f"{'+' if lp_change > 0 else ''}{lp_change} LP", inline=True)
     embed.set_thumbnail(url=champion_image)
-    embed.timestamp = datetime.utcnow()
     try:
         await channel.send(embed=embed)
     except discord.DiscordException as e:
