@@ -86,7 +86,7 @@ async def add_leaderboard_cmd(
 
     # Insertion en BDD
     insert_leaderboard_member(lb_id, puuid)
-    logging.info(f"[BDD] Ajout de {puuid} au leaderboard #{lb_id}")
+    logging.info(f"[BDD] Added {puuid} to leaderboard #{lb_id}")
 
     channel_id = get_guild(guild_id)[1]
     await update_leaderboard_message(channel_id, interaction.client, guild_id)
@@ -130,7 +130,7 @@ async def remove_leaderboard_cmd(
         )
 
     delete_leaderboard_member(lb_id, puuid)
-    logging.info(f"[BDD] Suppression de {puuid} du leaderboard #{lb_id}")
+    logging.info(f"[BDD] Removed {puuid} from leaderboard #{lb_id}")
 
     channel_id = get_guild(guild_id)[1]
     await update_leaderboard_message(channel_id, interaction.client, guild_id)

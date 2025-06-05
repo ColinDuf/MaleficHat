@@ -9,13 +9,16 @@ from dotenv import load_dotenv
 from create_db import create_db
 from leaderboard_tasks import reset_lp_scheduler
 import leaderboard
-from fonction_bdd import (insert_player, get_player_by_username, delete_player, username_autocomplete, get_player, \
-                          get_all_players, get_guild, insert_guild, insert_player_guild, update_player_guild,
-                          update_player_global, get_leaderboard_by_guild, delete_leaderboard_member,
-                          )
+from fonction_bdd import (insert_player, get_player_by_username, delete_player,
+                          username_autocomplete, get_player, get_all_players,
+                          get_guild, insert_guild, insert_player_guild,
+                          update_player_guild, update_player_global,
+                          get_leaderboard_by_guild, delete_leaderboard_member,
+                          count_players)
 import requests
 import tracemalloc
 from log import DiscordLogHandler
+import time
 
 tracemalloc.start()
 load_dotenv()
@@ -40,6 +43,46 @@ players_in_game: set[str] = set()
 players_in_game_messages: dict[str, discord.Message] = {}
 CHAMPION_MAPPING: dict[int, str] = {}
 
+RETRY_STATUS_CODES = {502, 503, 504}
+
+
+def fetch_json(url: str, headers: dict | None = None,
+               retries: int = 3, backoff: float = 1.0):
+    """GET JSON data with simple retry logic for 5xx errors."""
+    for attempt in range(1, retries + 1):
+        try:
+            resp = requests.get(url, headers=headers, timeout=10)
+            if resp.status_code in RETRY_STATUS_CODES:
+                raise requests.exceptions.HTTPError(f"{resp.status_code}")
+            if resp.status_code == 404:
+                return None
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.RequestException as e:
+            if attempt == retries:
+                logging.error(f"Error fetching {url}: {e}")
+                return None
+            time.sleep(backoff * attempt)
+
+
+async def async_fetch_json(url: str, headers: dict | None = None,
+                           retries: int = 3, backoff: float = 1.0):
+    for attempt in range(1, retries + 1):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=10) as resp:
+                    if resp.status in RETRY_STATUS_CODES:
+                        raise aiohttp.ClientResponseError(resp.request_info, resp.history, status=resp.status)
+                    if resp.status == 404:
+                        return None
+                    resp.raise_for_status()
+                    return await resp.json()
+        except aiohttp.ClientError as e:
+            if attempt == retries:
+                logging.error(f"Error fetching {url}: {e}")
+                return None
+            await asyncio.sleep(backoff * attempt)
+
 ##############################################################################
 # Fonctions d'accès à l'API Riot (appel synchrones via requests)
 ##############################################################################
@@ -47,53 +90,45 @@ CHAMPION_MAPPING: dict[int, str] = {}
 def get_puuid(username, hashtag):
     url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{username}/{hashtag}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        return response.json().get('puuid')
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching PUUID: {e}")
-        return None
+    data = fetch_json(url, headers=headers)
+    return data.get('puuid') if data else None
 
 def get_summoner_id(puuid):
     url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        return response.json().get('id')
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching summoner ID: {e}")
-        return None
+    data = fetch_json(url, headers=headers)
+    return data.get('id') if data else None
 
-def get_summoner_rank(summoner_id):
+def get_summoner_rank_details(summoner_id):
+    """Return detailed solo/duo rank info for a summoner."""
     url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        ranks = response.json()
-        for rank in ranks:
-            if rank['queueType'] == 'RANKED_SOLO_5x5':
-                # Exemple de résultat : "GOLD I 50 LP"
-                return f"{rank['tier']} {rank['rank']} {rank['leaguePoints']} LP"
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching summoner rank: {e}")
+    data = fetch_json(url, headers=headers)
+    if isinstance(data, list):
+        for entry in data:
+            if entry.get('queueType') == 'RANKED_SOLO_5x5':
+                return {
+                    'tier': entry.get('tier'),
+                    'rank': entry.get('rank'),
+                    'lp': entry.get('leaguePoints'),
+                    'wins': entry.get('wins'),
+                    'losses': entry.get('losses'),
+                }
+    return None
+
+def get_summoner_rank(summoner_id):
+    details = get_summoner_rank_details(summoner_id)
+    if details:
+        return f"{details['tier']} {details['rank']} {details['lp']} LP"
     return "Unknown"
 
 def get_last_match(puuid, nb_last_match):
     url = f"https://europe.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type=ranked&count={nb_last_match}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        matches = response.json()
-        if isinstance(matches, list) and matches:
-            return matches
-        return None
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching last matches: {e}")
-        return None
+    matches = fetch_json(url, headers=headers)
+    if isinstance(matches, list) and matches:
+        return matches
+    return None
 
 
 def get_ddragon_latest_version() -> str:
@@ -101,17 +136,11 @@ def get_ddragon_latest_version() -> str:
     Récupère la liste des versions Data Dragon depuis Riot,
     et retourne la première (la plus récente)".
     """
-    try:
-        versions_url = "https://ddragon.leagueoflegends.com/api/versions.json"
-        response = requests.get(versions_url)
-        response.raise_for_status()
-        versions = response.json()
-        if isinstance(versions, list) and len(versions) > 0:
-            return versions[0]
-        else:
-            logging.error("Impossible de récupérer la version Data Dragon : réponse inattendue.")
-    except requests.RequestException as e:
-        logging.error(f"Erreur lors de la récupération des versions Data Dragon : {e}")
+    versions_url = "https://ddragon.leagueoflegends.com/api/versions.json"
+    versions = fetch_json(versions_url)
+    if isinstance(versions, list) and versions:
+        return versions[0]
+    logging.error("Failed to retrieve Data Dragon version: unexpected response.")
     return "25.11"
 
 
@@ -122,18 +151,12 @@ def init_champion_mapping() -> None:
     CHAMPION_MAPPING = { int(key) : name } pour chaque champion.
     """
     global CHAMPION_MAPPING
-
     version = get_ddragon_latest_version()
 
-    try:
-        url_champs = f"https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json"
-        resp = requests.get(url_champs)
-        resp.raise_for_status()
-        data = resp.json().get("data", {})
-    except requests.RequestException as e:
-        logging.error(f"[DataDragon] Impossible de récupérer champion.json pour la version {version} : {e}")
-        data = {}
-
+    url_champs = f"https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json"
+    resp = fetch_json(url_champs)
+    data = resp.get("data", {}) if isinstance(resp, dict) else {}
+    
     CHAMPION_MAPPING.clear()
     for champ_name, champ_info in data.items():
         try:
@@ -154,53 +177,48 @@ def get_match_details(match_id: str, puuid: str):
 
     url = f"https://europe.api.riotgames.com/lol/match/v5/matches/{match_id}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        match_data = response.json()
+    match_data = fetch_json(url, headers=headers)
+    if not match_data:
+        return None
+    game_mode = match_data.get("info", {}).get("queueId")
+    if game_mode == 420:
+        # Récupère la version Data Dragon à la volée
+        ddragon_version = get_ddragon_latest_version()
 
-        game_mode = match_data.get("info", {}).get("queueId")
-        if game_mode == 420:
-            # Récupère la version Data Dragon à la volée
-            ddragon_version = get_ddragon_latest_version()
+        for participant in match_data["info"].get("participants", []):
+            if participant.get("puuid") == puuid:
+                # Résultat (victoire/défaite)
+                result = ":green_circle:" if participant.get("win") else ":red_circle:"
+                champion = participant.get("championName", "")
+                kills = participant.get("kills", 0)
+                deaths = participant.get("deaths", 0)
+                assists = participant.get("assists", 0)
+                damage = participant.get("totalDamageDealtToChampions", 0)
 
-            for participant in match_data["info"]["participants"]:
-                if participant["puuid"] == puuid:
-                    # Résultat (victoire/défaite)
-                    result = ":green_circle:" if participant.get("win") else ":red_circle:"
-                    champion = participant.get("championName", "")
-                    kills = participant.get("kills", 0)
-                    deaths = participant.get("deaths", 0)
-                    assists = participant.get("assists", 0)
-                    damage = participant.get("totalDamageDealtToChampions", 0)
+                # Durée de la partie (format mm:ss ou hh:mm:ss)
+                game_duration_seconds = match_data["info"].get("gameDuration", 0)
+                if game_duration_seconds >= 3600:
+                    game_duration = str(timedelta(seconds=game_duration_seconds))
+                else:
+                    minutes = game_duration_seconds // 60
+                    seconds = game_duration_seconds % 60
+                    game_duration = f"{minutes}:{seconds:02d}"
 
-                    # Durée de la partie (format mm:ss ou hh:mm:ss)
-                    game_duration_seconds = match_data["info"].get("gameDuration", 0)
-                    if game_duration_seconds >= 3600:
-                        game_duration = str(timedelta(seconds=game_duration_seconds))
-                    else:
-                        minutes = game_duration_seconds // 60
-                        seconds = game_duration_seconds % 60
-                        game_duration = f"{minutes}:{seconds:02d}"
+                champion_image = (
+                    f"https://ddragon.leagueoflegends.com/cdn/"
+                    f"{ddragon_version}/img/champion/{champion}.png"
+                )
 
-                    champion_image = (
-                        f"https://ddragon.leagueoflegends.com/cdn/"
-                        f"{ddragon_version}/img/champion/{champion}.png"
-                    )
-
-                    return (
-                        result,
-                        champion,
-                        kills,
-                        deaths,
-                        assists,
-                        game_duration,
-                        champion_image,
-                        damage
-                    )
-
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching match details: {e}")
+                return (
+                    result,
+                    champion,
+                    kills,
+                    deaths,
+                    assists,
+                    game_duration,
+                    champion_image,
+                    damage
+                )
 
     return None
 
@@ -216,28 +234,20 @@ async def check_username_changes():
 
             url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
             headers = {"X-Riot-Token": RIOT_API_KEY}
-
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url, headers=headers) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            current_username = (
-                                    data.get("gameName", "").upper() +
-                                    "#" +
-                                    data.get("tagLine", "").upper()
-                            )
-                            if current_username != old_username:
-                                update_player_global(puuid, username=current_username)
-                                logging.info(
-                                    f"Username mis à jour : {old_username} → {current_username}"
-                                )
-                        else:
-                            logging.warning(
-                                f"❌ Erreur récupération Riot pour PUUID {puuid} (status {response.status})"
-                            )
-            except Exception as e:
-                logging.error(f"Erreur de requête API pour {puuid}: {e}")
+            data = await async_fetch_json(url, headers=headers)
+            if data:
+                current_username = (
+                        data.get("gameName", "").upper() + "#" + data.get("tagLine", "").upper()
+                )
+                if current_username != old_username:
+                    update_player_global(puuid, username=current_username)
+                    logging.info(
+                        f"Username updated: {old_username} -> {current_username}"
+                    )
+            else:
+                logging.warning(
+                    f"❌ Riot API error for PUUID {puuid}"
+                )
 
         await asyncio.sleep(86400)
 
@@ -268,7 +278,7 @@ def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
         return rank_diff + tier_diff + (new_lp - old_lp)
 
     except ValueError as e:
-        logging.error(f"[ERREUR LP] Mauvaise valeur de tier/rank : {e}")
+        logging.error(f"[LP ERROR] Invalid tier/rank value: {e}")
         return 0
 
 
@@ -280,25 +290,15 @@ async def is_in_game(puuid: str) -> int | None:
     url = f"https://euw1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if data.get("gameQueueConfigId") != 420:
-                        return None
-                    for participant in data.get("participants", []):
-                        if participant.get("puuid") == puuid:
-                            return participant.get("championId")
-                    return None
-                elif response.status == 404:
-                    return None
-                else:
-                    logging.warning(f"[Spectator] statut inattendu {response.status} pour puuid={puuid}")
-                    return None
-    except aiohttp.ClientError as e:
-        logging.error(f"Erreur HTTP Spectator V5 : {e}")
+    data = await async_fetch_json(url, headers=headers)
+    if not data:
         return None
+    if data.get("gameQueueConfigId") != 420:
+        return None
+    for participant in data.get("participants", []):
+        if participant.get("puuid") == puuid:
+            return participant.get("championId")
+    return None
 
 
 ###############################################################################
@@ -401,6 +401,8 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
     )
 
     logging.info(f"[REGISTER] {username} --> Discord ID : {channel_id}")
+    total = count_players()
+    logging.info(f"[STATS] {total} player(s) registered in total")
 
 
     await interaction.followup.send(
@@ -424,7 +426,7 @@ async def unregister(interaction: discord.Interaction, username: str):
     player = get_player_by_username(username, guild_id)
     if not player:
         return await interaction.response.send_message(
-            f"❌ {username} n'est pas enregistré sur ce serveur.",
+            f"❌ {username} is not registered on this server.",
             ephemeral=True
         )
     puuid = player[1]
@@ -440,11 +442,57 @@ async def unregister(interaction: discord.Interaction, username: str):
         await leaderboard.update_leaderboard_message(lb_channel_id, client, guild_id)
 
     await interaction.response.send_message(
-        f"✅ Joueur **{username}** désinscrit " +
-        ("et retiré du leaderboard." if lb_id is not None else "."),
+        f"✅ Player **{username}** unregistered " +
+        ("and removed from the leaderboard." if lb_id is not None else "."),
         ephemeral=True
     )
     return None
+
+
+@tree.command(name="rank", description="Display a player's current Solo/Duo rank")
+@app_commands.autocomplete(username=username_autocomplete)
+async def rank(interaction: discord.Interaction, username: str):
+    """Show current rank for a registered player."""
+    guild_id = interaction.guild.id
+    username = username.upper()
+    await interaction.response.defer()
+
+    player = get_player_by_username(username, guild_id)
+    if not player:
+        await interaction.followup.send("This player is not registered here.", ephemeral=True)
+        return
+
+    summoner_id = player[0]
+    data = await asyncio.to_thread(get_summoner_rank_details, summoner_id)
+    if not data:
+        await interaction.followup.send("Unable to retrieve rank data.", ephemeral=True)
+        return
+
+    wins = data['wins']
+    losses = data['losses']
+    total = wins + losses
+    winrate = (wins / total) * 100 if total > 0 else 0.0
+
+    tier = data['tier']
+    division = data['rank']
+    lp = data['lp']
+    emblem_url = (
+        "https://raw.githubusercontent.com/RiotAPI/"
+        "Riot-Games-API-Developer-Assets/master/emblems/"
+        f"{tier.capitalize()}.png"
+    )
+
+    embed = discord.Embed(
+        title=f"{username} rank:",
+        description=f"{tier} {division} — {lp} LP",
+        color=discord.Color.blue(),
+    )
+    embed.add_field(name="Wins", value=str(wins), inline=True)
+    embed.add_field(name="Losses", value=str(losses), inline=True)
+    embed.add_field(name="Winrate", value=f"{winrate:.1f}%", inline=True)
+    embed.set_thumbnail(url=emblem_url)
+
+    await interaction.followup.send(embed=embed)
 
 
 @tree.command(name="career", description="Display a player's last 10 ranked Solo/Duo games")
@@ -528,7 +576,7 @@ async def check_ingame():
                         f"{version}/img/champion/{champion_name}.png"
                     )
                 else:
-                    logging.warning(f"[check_ingame] Champion ID {champion_id} inconnu dans CHAMPION_MAPPING.")
+                    logging.warning(f"[check_ingame] Unknown champion ID {champion_id} in CHAMPION_MAPPING.")
                     champion_image_url = None
 
                 embed = discord.Embed(
@@ -551,8 +599,8 @@ async def check_ingame():
                     players_in_game.add(puuid)
                     players_in_game_messages[puuid] = msg
 
-            elif champion_id is None and puuid in players_in_game:
-                players_in_game.discard(puuid)
+            # Don't remove the player here. The check_for_game_completion task
+            # will take care of cleanup once the match ID changes.
 
         await asyncio.sleep(15)
 
@@ -669,10 +717,10 @@ async def check_for_game_completion():
             if lb_channel_id:
                 await leaderboard.update_leaderboard_message(lb_channel_id, client, guild_id)
             else:
-                logging.warning(f"[Leaderboard] Pas de salon configuré pour guilde {guild_id}")
+                logging.warning(f"[Leaderboard] No channel configured for guild {guild_id}")
 
             players_in_game.discard(puuid)
-            logging.info(f"[MATCH FINI] {username} : LP change = {lp_change}, new LP = {new_lp}")
+            logging.info(f"[MATCH FINISHED] {username}: LP change = {lp_change}, new LP = {new_lp}")
 
         await asyncio.sleep(10)
 

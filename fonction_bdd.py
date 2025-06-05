@@ -337,3 +337,14 @@ def reset_all_lp_7d():
     c.execute("UPDATE player SET lp_7d = 0")
     conn.commit()
     conn.close()
+
+# ----- Helpers -----
+
+def count_players() -> int:
+    """Return the total number of registered players."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM player")
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else 0
