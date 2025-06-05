@@ -4,7 +4,7 @@ from discord import app_commands
 import os
 import logging
 import asyncio
-from datetime import timedelta
+from datetime import timedelta, datetime
 from dotenv import load_dotenv
 from create_db import create_db
 from leaderboard_tasks import reset_lp_scheduler
@@ -17,6 +17,7 @@ from fonction_bdd import (insert_player, get_player_by_username, delete_player,
                           count_players)
 import requests
 import tracemalloc
+from pathlib import Path
 from log import DiscordLogHandler
 import time
 
@@ -39,8 +40,8 @@ formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 discord_handler.setFormatter(formatter)
 logging.getLogger().addHandler(discord_handler)
 
-players_in_game: set[str] = set()
-players_in_game_messages: dict[str, discord.Message] = {}
+players_in_game: set[tuple[str, int]] = set()
+players_in_game_messages: dict[tuple[str, int], discord.Message] = {}
 CHAMPION_MAPPING: dict[int, str] = {}
 
 RETRY_STATUS_CODES = {502, 503, 504}
@@ -400,9 +401,10 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
         last_match_id
     )
 
-    logging.info(f"[REGISTER] {username} --> Discord ID : {channel_id}")
     total = count_players()
-    logging.info(f"[STATS] {total} player(s) registered in total")
+    logging.info(
+        f"[REGISTER] {username} --> Discord ID : {channel_id} --> Registered : {total}"
+    )
 
 
     await interaction.followup.send(
@@ -476,11 +478,30 @@ async def rank(interaction: discord.Interaction, username: str):
     tier = data['tier']
     division = data['rank']
     lp = data['lp']
-    emblem_url = (
-        "https://raw.githubusercontent.com/RiotAPI/"
-        "Riot-Games-API-Developer-Assets/master/emblems/"
-        f"{tier.capitalize()}.png"
-    )
+    tier_files = {
+        "IRON": "iron.png",
+        "BRONZE": "bronze.png",
+        "SILVER": "silver.png",
+        "GOLD": "gold.png",
+        "PLATINUM": "platinium.png",
+        "EMERALD": "emerald.png",
+        "DIAMOND": "diamond.png",
+        "MASTER": "master.png",
+        "GRANDMASTER": "grandmaster.png",
+        "CHALLENGER": "challenger.png",
+    }
+    emblem_file = tier_files.get(tier.upper())
+    emblem_path = Path("assets") / emblem_file if emblem_file else None
+
+    if emblem_path and emblem_path.exists():
+        file = discord.File(str(emblem_path), filename=emblem_file)
+        thumbnail_url = f"attachment://{emblem_file}"
+    else:
+        thumbnail_url = (
+            "https://raw.githubusercontent.com/RiotAPI/"
+            "Riot-Games-API-Developer-Assets/master/emblems/"
+            f"{tier.capitalize()}.png"
+        )
 
     embed = discord.Embed(
         title=f"{username} rank:",
@@ -490,9 +511,12 @@ async def rank(interaction: discord.Interaction, username: str):
     embed.add_field(name="Wins", value=str(wins), inline=True)
     embed.add_field(name="Losses", value=str(losses), inline=True)
     embed.add_field(name="Winrate", value=f"{winrate:.1f}%", inline=True)
-    embed.set_thumbnail(url=emblem_url)
+    embed.set_thumbnail(url=thumbnail_url)
 
-    await interaction.followup.send(embed=embed)
+    if emblem_path and emblem_path.exists():
+        await interaction.followup.send(embed=embed, file=file)
+    else:
+        await interaction.followup.send(embed=embed)
 
 
 @tree.command(name="career", description="Display a player's last 10 ranked Solo/Duo games")
@@ -567,7 +591,9 @@ async def check_ingame():
 
             champion_id = await is_in_game(puuid)
 
-            if champion_id is not None and puuid not in players_in_game:
+            player_key = (puuid, guild_id)
+
+            if champion_id is not None and player_key not in players_in_game:
                 champion_name = CHAMPION_MAPPING.get(champion_id)
                 if champion_name:
                     version = get_ddragon_latest_version()
@@ -589,6 +615,7 @@ async def check_ingame():
 
                 if champion_image_url:
                     embed.set_thumbnail(url=champion_image_url)
+                embed.timestamp = datetime.utcnow()
 
                 try:
                     msg = await channel.send(embed=embed)
@@ -596,8 +623,8 @@ async def check_ingame():
                     logging.error(f"[check_ingame] Failed to send in-game embed: {e}")
                     msg = None
                 if msg:
-                    players_in_game.add(puuid)
-                    players_in_game_messages[puuid] = msg
+                    players_in_game.add(player_key)
+                    players_in_game_messages[player_key] = msg
 
             # Don't remove the player here. The check_for_game_completion task
             # will take care of cleanup once the match ID changes.
@@ -621,13 +648,13 @@ async def check_for_game_completion():
 
     while True:
         players = await async_get_all_players()
-        player_map = {row[1]: row for row in players}
+        player_map = {(row[1], row[3]): row for row in players}
 
-        for puuid in list(players_in_game):
-            row = player_map.get(puuid)
+        for player_key in list(players_in_game):
+            row = player_map.get(player_key)
             if not row:
-                players_in_game.discard(puuid)
-                players_in_game_messages.pop(puuid, None)
+                players_in_game.discard(player_key)
+                players_in_game_messages.pop(player_key, None)
                 continue
 
             (
@@ -691,7 +718,8 @@ async def check_for_game_completion():
                 lp_change=lp_change
             )
 
-            in_game_msg = players_in_game_messages.pop(puuid, None)
+            player_key = (puuid, guild_id)
+            in_game_msg = players_in_game_messages.pop(player_key, None)
             if in_game_msg:
                 try:
                     await in_game_msg.delete()
@@ -716,11 +744,12 @@ async def check_for_game_completion():
             lb_channel_id = guild_data[1] if guild_data else None
             if lb_channel_id:
                 await leaderboard.update_leaderboard_message(lb_channel_id, client, guild_id)
-            else:
-                logging.warning(f"[Leaderboard] No channel configured for guild {guild_id}")
 
-            players_in_game.discard(puuid)
-            logging.info(f"[MATCH FINISHED] {username}: LP change = {lp_change}, new LP = {new_lp}")
+            players_in_game.discard(player_key)
+            logging.info(
+                f"[MATCH FINISHED] {username}: "
+                f"Old LP: {old_lp} New LP: {new_lp} Difference: {lp_change}"
+            )
 
         await asyncio.sleep(10)
 
@@ -737,6 +766,7 @@ async def send_match_result_embed(channel, username, result, kills, deaths, assi
     embed.add_field(name="Damage", value=f"{damage}", inline=True)
     embed.add_field(name=lp_text, value=f"{'+' if lp_change > 0 else ''}{lp_change} LP", inline=True)
     embed.set_thumbnail(url=champion_image)
+    embed.timestamp = datetime.utcnow()
     try:
         await channel.send(embed=embed)
     except discord.DiscordException as e:
