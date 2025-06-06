@@ -103,8 +103,11 @@ def get_summoner_id(puuid):
     data = fetch_json(url, headers=headers)
     return data.get('id') if data else None
 
-def get_summoner_rank_details(summoner_id):
-    """Return detailed solo/duo rank info for a summoner."""
+def get_summoner_rank_details(puuid: str):
+    """Return detailed solo/duo rank info for a summoner using their PUUID."""
+    summoner_id = get_summoner_id(puuid)
+    if not summoner_id:
+        return None
     url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     data = fetch_json(url, headers=headers)
@@ -120,8 +123,8 @@ def get_summoner_rank_details(summoner_id):
                 }
     return None
 
-def get_summoner_rank(summoner_id):
-    details = get_summoner_rank_details(summoner_id)
+def get_summoner_rank(puuid: str):
+    details = get_summoner_rank_details(puuid)
     if details:
         return f"{details['tier']} {details['rank']} {details['lp']} LP"
     return "Unknown"
@@ -236,7 +239,7 @@ async def check_username_changes():
     while True:
         players = await async_get_all_players()
         for player in players:
-            summoner_id, puuid, old_username, *_ = player
+            _summoner_id, puuid, old_username, *_ = player
 
             url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
             headers = {"X-Riot-Token": RIOT_API_KEY}
@@ -259,6 +262,15 @@ async def check_username_changes():
 
 
 def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
+    """Return LP difference between two rank states.
+
+    For MASTER and above there is no tier (division).  The previous
+    implementation assumed four divisions for every rank which led to
+    incorrect results when ranking up from DIAMOND to MASTER or when
+    progressing between MASTER and GRANDMASTER.  This version converts
+    each state into an absolute score based on the real progression
+    rules before computing the difference.
+    """
 
     rank_order = [
         'IRON', 'BRONZE', 'SILVER', 'GOLD',
@@ -267,23 +279,37 @@ def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
     ]
     tier_order = ['IV', 'III', 'II', 'I']
 
+    # Points required to reach the start of each rank. Master and above have
+    # no divisions. Grandmaster requires reaching 200 LP in Master before the
+    # promotion can occur. Challenger uses a 100 LP step after Grandmaster.
+    base_points = {}
+    for i, r in enumerate(rank_order):
+        if i <= 7:  # up to MASTER
+            base_points[r] = i * 400
+        elif r == 'GRANDMASTER':
+            base_points[r] = base_points['MASTER'] + 200
+        else:  # CHALLENGER
+            base_points[r] = base_points['GRANDMASTER'] + 100
+
+    def tier_value(rank, tier):
+        if rank in ('MASTER', 'GRANDMASTER', 'CHALLENGER'):
+            return 0
+        if tier in tier_order:
+            return tier_order.index(tier) * 100
+        raise ValueError(f"invalid tier '{tier}' for rank {rank}")
+
     try:
-        # Cas où la catégorie (rank) n'a pas changé
-        if old_rank == new_rank:
-            # Même division → on renvoie juste la différence de LP
-            if old_tier == new_tier:
-                return new_lp - old_lp
+        if old_rank not in rank_order or new_rank not in rank_order:
+            raise ValueError("invalid rank value")
+        if old_rank not in ('MASTER', 'GRANDMASTER', 'CHALLENGER') and old_tier not in tier_order:
+            raise ValueError("invalid tier value")
+        if new_rank not in ('MASTER', 'GRANDMASTER', 'CHALLENGER') and new_tier not in tier_order:
+            raise ValueError("invalid tier value")
 
-            # Même catégorie, division différente
-            tier_diff = (tier_order.index(new_tier) - tier_order.index(old_tier)) * 100
-            return tier_diff + (new_lp - old_lp)
-
-        # Changement de catégorie (rank)
-        rank_diff = (rank_order.index(new_rank) - rank_order.index(old_rank)) * 400
-        tier_diff = (tier_order.index(new_tier) - tier_order.index(old_tier)) * 100
-        return rank_diff + tier_diff + (new_lp - old_lp)
-
-    except ValueError as e:
+        old_score = base_points[old_rank] + tier_value(old_rank, old_tier) + old_lp
+        new_score = base_points[new_rank] + tier_value(new_rank, new_tier) + new_lp
+        return new_score - old_score
+    except Exception as e:  # includes KeyError and ValueError
         logging.error(f"[LP ERROR] Invalid tier/rank value: {e}")
         return 0
 
@@ -376,7 +402,7 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
         )
     last_match_id = last_ids[0]
 
-    rank_info = await asyncio.to_thread(get_summoner_rank, summoner_id)
+    rank_info = await asyncio.to_thread(get_summoner_rank, puuid)
     if rank_info == "Unknown":
         return await interaction.followup.send(
             f"Unable to retrieve rank for {username}.", ephemeral=True
@@ -469,8 +495,8 @@ async def rank(interaction: discord.Interaction, username: str):
         await interaction.followup.send("This player is not registered here.", ephemeral=True)
         return
 
-    summoner_id = player[0]
-    data = await asyncio.to_thread(get_summoner_rank_details, summoner_id)
+    puuid = player[1]
+    data = await asyncio.to_thread(get_summoner_rank_details, puuid)
     if not data:
         await interaction.followup.send("Unable to retrieve rank data.", ephemeral=True)
         return
@@ -534,8 +560,7 @@ async def career(interaction: discord.Interaction, username: str):
         await interaction.followup.send("This player is not registered!", ephemeral=True)
         return
     puuid = player[1]
-    summoner_id = player[0]
-    rank_info = await asyncio.to_thread(get_summoner_rank, summoner_id)
+    rank_info = await asyncio.to_thread(get_summoner_rank, puuid)
     if rank_info == "Unknown":
         await interaction.followup.send("Error retrieving player rank information!", ephemeral=True)
         return
@@ -589,7 +614,7 @@ async def check_ingame():
 
     while True:
         players = await async_get_all_players()
-        for summoner_id, puuid, username, guild_id, channel_id, *_ in players:
+        for _summoner_id, puuid, username, guild_id, channel_id, *_ in players:
             channel = client.get_channel(int(channel_id))
             if not channel:
                 continue
@@ -668,7 +693,7 @@ async def check_for_game_completion():
                 continue
 
             (
-                summoner_id,
+                _summoner_id,
                 puuid,
                 username,
                 guild_id,
@@ -702,7 +727,7 @@ async def check_for_game_completion():
                 rank_str = old_rank
                 new_lp = old_lp + lp_change
             else:
-                new_rank_info = await asyncio.to_thread(get_summoner_rank, summoner_id)
+                new_rank_info = await asyncio.to_thread(get_summoner_rank, puuid)
                 if new_rank_info == "Unknown":
                     tier_str = old_tier
                     rank_str = old_rank

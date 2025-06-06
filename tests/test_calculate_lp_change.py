@@ -31,3 +31,17 @@ def test_lp_rank_changes(bot_module):
 
 def test_lp_invalid_values(bot_module):
     assert bot_module.calculate_lp_change("V", "GOLD", 50, "IV", "GOLD", 60) == 0
+
+
+def test_lp_to_master(bot_module):
+    # From DIAMOND I 80 LP to MASTER 0 LP should require 20 LP
+    assert bot_module.calculate_lp_change(
+        "I", "DIAMOND", 80, "", "MASTER", 0
+    ) == 20
+
+
+def test_lp_master_to_grandmaster(bot_module):
+    # From MASTER 40 LP to GRANDMASTER 0 LP should require 160 LP
+    assert bot_module.calculate_lp_change(
+        "", "MASTER", 40, "", "GRANDMASTER", 0
+    ) == 160
