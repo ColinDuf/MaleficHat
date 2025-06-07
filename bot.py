@@ -259,6 +259,15 @@ async def check_username_changes():
 
 
 def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
+    """Return LP difference between two rank states.
+
+    For MASTER and above there is no tier (division).  The previous
+    implementation assumed four divisions for every rank which led to
+    incorrect results when ranking up from DIAMOND to MASTER or when
+    progressing between MASTER and GRANDMASTER.  This version converts
+    each state into an absolute score based on the real progression
+    rules before computing the difference.
+    """
 
     rank_order = [
         'IRON', 'BRONZE', 'SILVER', 'GOLD',
@@ -267,23 +276,37 @@ def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
     ]
     tier_order = ['IV', 'III', 'II', 'I']
 
+    # Points required to reach the start of each rank. Master and above have
+    # no divisions. Grandmaster requires reaching 200 LP in Master before the
+    # promotion can occur. Challenger uses a 100 LP step after Grandmaster.
+    base_points = {}
+    for i, r in enumerate(rank_order):
+        if i <= 7:  # up to MASTER
+            base_points[r] = i * 400
+        elif r == 'GRANDMASTER':
+            base_points[r] = base_points['MASTER'] + 200
+        else:  # CHALLENGER
+            base_points[r] = base_points['GRANDMASTER'] + 100
+
+    def tier_value(rank, tier):
+        if rank in ('MASTER', 'GRANDMASTER', 'CHALLENGER'):
+            return 0
+        if tier in tier_order:
+            return tier_order.index(tier) * 100
+        raise ValueError(f"invalid tier '{tier}' for rank {rank}")
+
     try:
-        # Cas où la catégorie (rank) n'a pas changé
-        if old_rank == new_rank:
-            # Même division → on renvoie juste la différence de LP
-            if old_tier == new_tier:
-                return new_lp - old_lp
+        if old_rank not in rank_order or new_rank not in rank_order:
+            raise ValueError("invalid rank value")
+        if old_rank not in ('MASTER', 'GRANDMASTER', 'CHALLENGER') and old_tier not in tier_order:
+            raise ValueError("invalid tier value")
+        if new_rank not in ('MASTER', 'GRANDMASTER', 'CHALLENGER') and new_tier not in tier_order:
+            raise ValueError("invalid tier value")
 
-            # Même catégorie, division différente
-            tier_diff = (tier_order.index(new_tier) - tier_order.index(old_tier)) * 100
-            return tier_diff + (new_lp - old_lp)
-
-        # Changement de catégorie (rank)
-        rank_diff = (rank_order.index(new_rank) - rank_order.index(old_rank)) * 400
-        tier_diff = (tier_order.index(new_tier) - tier_order.index(old_tier)) * 100
-        return rank_diff + tier_diff + (new_lp - old_lp)
-
-    except ValueError as e:
+        old_score = base_points[old_rank] + tier_value(old_rank, old_tier) + old_lp
+        new_score = base_points[new_rank] + tier_value(new_rank, new_tier) + new_lp
+        return new_score - old_score
+    except Exception as e:  # includes KeyError and ValueError
         logging.error(f"[LP ERROR] Invalid tier/rank value: {e}")
         return 0
 
