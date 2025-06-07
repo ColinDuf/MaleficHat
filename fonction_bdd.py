@@ -10,11 +10,11 @@ def get_connection():
     return conn
 
 
-def insert_player(summoner_id: str,
+def insert_player(username: str,
                   puuid: str,
-                  username: str,
-                  tier: str,
+                  summoner_id: str,
                   rank: str,
+                  tier: str,
                   lp: int):
     """
     Insert or update des données globales du joueur.
@@ -24,19 +24,19 @@ def insert_player(summoner_id: str,
     # Insert initial si absent
     c.execute("""
               INSERT OR IGNORE INTO player
-              (puuid, username, summoner_id, tier, rank, lp, lp_24h, lp_7d, created_at, updated_at)
+              (username, puuid, summoner_id, rank, tier, lp, lp_24h, lp_7d, created_at, updated_at)
               VALUES (?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-              """, (puuid, username, summoner_id, tier, rank, lp))
+              """, (username, puuid, summoner_id, rank, tier, lp))
     c.execute("""
               UPDATE player
               SET username = ?,
                   summoner_id = ?,
-                  tier = ?,
                   rank = ?,
+                  tier = ?,
                   lp = ?,
                   updated_at = CURRENT_TIMESTAMP
               WHERE puuid = ?
-              """, (username, summoner_id, tier, rank, lp, puuid))
+              """, (username, summoner_id, rank, tier, lp, puuid))
     conn.commit()
     conn.close()
 

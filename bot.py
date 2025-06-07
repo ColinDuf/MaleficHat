@@ -314,12 +314,15 @@ def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
         return 0
 
 
-async def is_in_game(puuid: str) -> int | None:
+async def is_in_game(summoner_id: str) -> int | None:
     """
     Si le joueur est en ranked solo/duo (queue 420), renvoie son championId (int).
     Sinon renvoie None.
     """
-    url = f"https://euw1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
+    url = (
+        "https://euw1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/"
+        f"{summoner_id}"
+    )
     headers = {"X-Riot-Token": RIOT_API_KEY}
 
     data = await async_fetch_json(url, headers=headers)
@@ -328,7 +331,7 @@ async def is_in_game(puuid: str) -> int | None:
     if data.get("gameQueueConfigId") != 420:
         return None
     for participant in data.get("participants", []):
-        if participant.get("puuid") == puuid:
+        if participant.get("summonerId") == summoner_id:
             return participant.get("championId")
     return None
 
@@ -339,8 +342,8 @@ async def is_in_game(puuid: str) -> int | None:
 async def async_get_all_players():
     return await asyncio.to_thread(get_all_players)
 
-async def async_is_in_game(puuid):
-    return await is_in_game(puuid)
+async def async_is_in_game(summoner_id):
+    return await is_in_game(summoner_id)
 
 async def async_get_last_match(puuid, nb_last_match):
     return await asyncio.to_thread(get_last_match, puuid, nb_last_match)
@@ -417,11 +420,11 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
         )
 
     insert_player(
-        summoner_id,
-        puuid,
         username,
-        tier_str,
+        puuid,
+        summoner_id,
         rank_str,
+        tier_str,
         lp
     )
 
@@ -619,7 +622,7 @@ async def check_ingame():
             if not channel:
                 continue
 
-            champion_id = await is_in_game(puuid)
+            champion_id = await is_in_game(summoner_id)
 
             player_key = (puuid, guild_id)
 
@@ -705,7 +708,7 @@ async def check_for_game_completion():
                 *_
             ) = row
 
-            if await async_is_in_game(puuid):
+            if await async_is_in_game(summoner_id):
                 continue
 
             last_matches = await async_get_last_match(puuid, 1)
