@@ -1,5 +1,0 @@
-discord
-requests
-pytz
-schedule
-dotenv

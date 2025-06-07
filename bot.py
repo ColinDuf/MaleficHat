@@ -163,7 +163,7 @@ def init_champion_mapping() -> None:
     url_champs = f"https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json"
     resp = fetch_json(url_champs)
     data = resp.get("data", {}) if isinstance(resp, dict) else {}
-    
+
     CHAMPION_MAPPING.clear()
     for champ_name, champ_info in data.items():
         try:
