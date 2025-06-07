@@ -103,9 +103,9 @@ def get_summoner_id(puuid):
     data = fetch_json(url, headers=headers)
     return data.get('id') if data else None
 
-def get_summoner_rank_details(summoner_id):
+def get_summoner_rank_details(puuid):
     """Return detailed solo/duo rank info for a summoner."""
-    url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
+    url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{puuid}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     data = fetch_json(url, headers=headers)
     if isinstance(data, list):
