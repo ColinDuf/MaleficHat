@@ -23,7 +23,10 @@ import time
 
 tracemalloc.start()
 load_dotenv()
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(funcName)s - %(message)s'
+)
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 RIOT_API_KEY = os.getenv('RIOT_API_KEY')
@@ -36,7 +39,9 @@ leaderboard.setup_tree(tree)
 DISCORD_LOG_CHANNEL_ID = 1379139184635154442
 discord_handler = DiscordLogHandler(client, DISCORD_LOG_CHANNEL_ID)
 discord_handler.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter(
+    '%(asctime)s - %(levelname)s - %(funcName)s - %(message)s'
+)
 discord_handler.setFormatter(formatter)
 logging.getLogger().addHandler(discord_handler)
 
@@ -270,6 +275,10 @@ def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
     try:
         # Cas où la catégorie (rank) n'a pas changé
         if old_rank == new_rank:
+            # Rangs sans divisions (Master et au-dessus)
+            if old_rank in {"MASTER", "GRANDMASTER", "CHALLENGER"}:
+                return new_lp - old_lp
+
             # Même division → on renvoie juste la différence de LP
             if old_tier == new_tier:
                 return new_lp - old_lp
@@ -278,9 +287,19 @@ def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
             tier_diff = (tier_order.index(new_tier) - tier_order.index(old_tier)) * 100
             return tier_diff + (new_lp - old_lp)
 
-        # Changement de catégorie (rank)
+        # Promotion vers les rangs sans division
+        if new_rank == "MASTER" and old_rank == "DIAMOND":
+            return 100 - old_lp
+        if new_rank == "GRANDMASTER" and old_rank == "MASTER":
+            return 200 - old_lp
+        if new_rank == "CHALLENGER" and old_rank == "GRANDMASTER":
+            return 200 - old_lp
+
+        # Changement de catégorie (rank) standard
         rank_diff = (rank_order.index(new_rank) - rank_order.index(old_rank)) * 400
-        tier_diff = (tier_order.index(new_tier) - tier_order.index(old_tier)) * 100
+        old_tier_idx = tier_order.index(old_tier) if old_tier in tier_order else 0
+        new_tier_idx = tier_order.index(new_tier) if new_tier in tier_order else 0
+        tier_diff = (new_tier_idx - old_tier_idx) * 100
         return rank_diff + tier_diff + (new_lp - old_lp)
 
     except ValueError as e:
@@ -527,14 +546,16 @@ async def rank(interaction: discord.Interaction, username: str):
 @tree.command(name="career", description="Display a player's last 10 ranked Solo/Duo games")
 @app_commands.autocomplete(username=username_autocomplete)
 async def career(interaction: discord.Interaction, username: str):
+    """Show the last 10 ranked Solo/Duo games for a registered player."""
+    guild_id = interaction.guild.id
     username = username.upper()
     await interaction.response.defer()
-    player = get_player_by_username(username)
+    player = get_player_by_username(username, guild_id)
     if not player:
         await interaction.followup.send("This player is not registered!", ephemeral=True)
         return
-    puuid = player[1]
     summoner_id = player[0]
+    puuid = player[1]
     rank_info = await asyncio.to_thread(get_summoner_rank, summoner_id)
     if rank_info == "Unknown":
         await interaction.followup.send("Error retrieving player rank information!", ephemeral=True)
