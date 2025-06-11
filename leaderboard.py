@@ -193,7 +193,19 @@ async def update_leaderboard_message(channel_id: int, bot: discord.Client, guild
 
     # 6) Recherche un ancien message à éditer
     guild_obj = bot.get_guild(guild_id)
-    channel   = guild_obj.get_channel(channel_id)
+    if guild_obj is None:
+        logging.error(
+            f"[update_leaderboard_message] Guild with id {guild_id} not found"
+        )
+        return
+
+    channel = guild_obj.get_channel(channel_id)
+    if channel is None:
+        logging.error(
+            f"[update_leaderboard_message] Channel with id {channel_id} not found"
+        )
+        return
+
     async for msg in channel.history(limit=50):
         if (
                 msg.author == guild_obj.me
