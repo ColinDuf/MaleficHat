@@ -167,7 +167,7 @@ async def update_leaderboard_message(channel_id: int, bot: discord.Client, guild
     ))
 
     # 2) Prépare header et séparateur
-    header    = "Username                      | Rank              | LP (24h) | LP (7j)"
+    header    = "Username                      | Rank              | LP (24h) | LP (7d)"
     separator = "-" * len(header)
 
     # 3) Calcule la largeur de chaque colonne à partir du header
