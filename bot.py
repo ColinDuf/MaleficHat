@@ -650,18 +650,7 @@ async def check_ingame():
                     )
                     update_player_guild(puuid, guild_id, channel_id=0)
                     msg = None
-                except discord.HTTPException as e:
-                    if e.status == 403 and e.code == 50001:
-                        logging.warning(
-                            f"[check_ingame] Missing access to channel {channel_id}. Disabling alerts."
-                        )
-                        update_player_guild(puuid, guild_id, channel_id=0)
-                        msg = None
-                    else:
-                        logging.error(
-                            f"[check_ingame] Failed to send in-game embed: {e}"
-                        )
-                        msg = None
+
                 except discord.DiscordException as e:
                     logging.error(f"[check_ingame] Failed to send in-game embed: {e}")
                     msg = None
