@@ -36,6 +36,10 @@ They can be exported in your shell or placed in a `.env` file.
    python bot.py
    ```
 
+When the bot loses permission to send alerts in a configured channel, it
+automatically disables alerts for that player in that server to avoid cluttering
+the logs.
+
 ## Running Tests
 
 With the virtual environment active and dependencies installed, run:
