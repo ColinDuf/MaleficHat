@@ -650,6 +650,7 @@ async def check_ingame():
                     )
                     update_player_guild(puuid, guild_id, channel_id=0)
                     msg = None
+
                 except discord.DiscordException as e:
                     logging.error(f"[check_ingame] Failed to send in-game embed: {e}")
                     msg = None
