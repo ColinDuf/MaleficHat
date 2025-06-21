@@ -609,57 +609,60 @@ async def check_ingame():
         init_champion_mapping()
 
     while True:
-        players = await async_get_all_players()
-        for summoner_id, puuid, username, guild_id, channel_id, *_ in players:
-            channel = client.get_channel(int(channel_id))
-            if not channel:
-                continue
+        try:
+            players = await async_get_all_players()
+            for summoner_id, puuid, username, guild_id, channel_id, *_ in players:
+                channel = client.get_channel(int(channel_id))
+                if not channel:
+                    continue
 
-            champion_id = await is_in_game(puuid)
+                champion_id = await is_in_game(puuid)
 
-            player_key = (puuid, guild_id)
+                player_key = (puuid, guild_id)
 
-            if champion_id is not None and player_key not in players_in_game:
-                champion_name = CHAMPION_MAPPING.get(champion_id)
-                if champion_name:
-                    version = get_ddragon_latest_version()
-                    champion_image_url = (
-                        f"https://ddragon.leagueoflegends.com/cdn/"
-                        f"{version}/img/champion/{champion_name}.png"
+                if champion_id is not None and player_key not in players_in_game:
+                    champion_name = CHAMPION_MAPPING.get(champion_id)
+                    if champion_name:
+                        version = get_ddragon_latest_version()
+                        champion_image_url = (
+                            f"https://ddragon.leagueoflegends.com/cdn/"
+                            f"{version}/img/champion/{champion_name}.png"
+                        )
+                    else:
+                        logging.warning(f"[check_ingame] Unknown champion ID {champion_id} in CHAMPION_MAPPING.")
+                        champion_image_url = None
+
+                    embed = discord.Embed(
+                        title=f"{username} is playing a game!",
+                        color=discord.Color.gold()
                     )
-                else:
-                    logging.warning(f"[check_ingame] Unknown champion ID {champion_id} in CHAMPION_MAPPING.")
-                    champion_image_url = None
+                    embed.add_field(name="K/D/A",   value=":hourglass:", inline=True)
+                    embed.add_field(name="Damage", value=":hourglass:", inline=True)
+                    embed.add_field(name="LP",     value=":hourglass:", inline=True)
 
-                embed = discord.Embed(
-                    title=f"{username} is playing a game!",
-                    color=discord.Color.gold()
-                )
-                embed.add_field(name="K/D/A",   value=":hourglass:", inline=True)
-                embed.add_field(name="Damage", value=":hourglass:", inline=True)
-                embed.add_field(name="LP",     value=":hourglass:", inline=True)
+                    if champion_image_url:
+                        embed.set_thumbnail(url=champion_image_url)
 
-                if champion_image_url:
-                    embed.set_thumbnail(url=champion_image_url)
+                    try:
+                        msg = await channel.send(embed=embed)
+                    except discord.Forbidden:
+                        logging.warning(
+                            f"[check_ingame] Missing access to channel {channel_id}. Disabling alerts."
+                        )
+                        update_player_guild(puuid, guild_id, channel_id=0)
+                        msg = None
 
-                try:
-                    msg = await channel.send(embed=embed)
-                except discord.Forbidden:
-                    logging.warning(
-                        f"[check_ingame] Missing access to channel {channel_id}. Disabling alerts."
-                    )
-                    update_player_guild(puuid, guild_id, channel_id=0)
-                    msg = None
+                    except discord.DiscordException as e:
+                        logging.error(f"[check_ingame] Failed to send in-game embed: {e}")
+                        msg = None
+                    if msg:
+                        players_in_game.add(player_key)
+                        players_in_game_messages[player_key] = msg
 
-                except discord.DiscordException as e:
-                    logging.error(f"[check_ingame] Failed to send in-game embed: {e}")
-                    msg = None
-                if msg:
-                    players_in_game.add(player_key)
-                    players_in_game_messages[player_key] = msg
-
-            # Don't remove the player here. The check_for_game_completion task
-            # will take care of cleanup once the match ID changes.
+                    # Don't remove the player here. The check_for_game_completion task
+                    # will take care of cleanup once the match ID changes.
+        except Exception as e:
+            logging.error(f"[check_ingame] Unexpected error: {e}", exc_info=True)
 
         await asyncio.sleep(15)
 
@@ -679,21 +682,22 @@ async def check_for_game_completion():
     global players_in_game, players_in_game_messages, recent_match_lp_changes
 
     while True:
-        now = time.time()
-        recent_match_lp_changes = {
-            k: v for k, v in recent_match_lp_changes.items()
-            if now - v[1] < MATCH_CACHE_EXPIRATION
-        }
+        try:
+            now = time.time()
+            recent_match_lp_changes = {
+                k: v for k, v in recent_match_lp_changes.items()
+                if now - v[1] < MATCH_CACHE_EXPIRATION
+            }
 
-        players = await async_get_all_players()
-        player_map = {(row[1], row[3]): row for row in players}
+            players = await async_get_all_players()
+            player_map = {(row[1], row[3]): row for row in players}
 
-        for player_key in list(players_in_game):
-            row = player_map.get(player_key)
-            if not row:
-                players_in_game.discard(player_key)
-                players_in_game_messages.pop(player_key, None)
-                continue
+            for player_key in list(players_in_game):
+                row = player_map.get(player_key)
+                if not row:
+                    players_in_game.discard(player_key)
+                    players_in_game_messages.pop(player_key, None)
+                    continue
 
             (
                 summoner_id,
@@ -797,6 +801,9 @@ async def check_for_game_completion():
                 f"[MATCH FINISHED] {username}: "
                 f"Old LP: {old_lp} New LP: {new_lp} Difference: {lp_change}"
             )
+
+        except Exception as e:
+            logging.error(f"[check_for_game_completion] Unexpected error: {e}", exc_info=True)
 
         await asyncio.sleep(10)
 
