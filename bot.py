@@ -54,6 +54,12 @@ MATCH_CACHE_EXPIRATION = 3600  # seconds
 
 RETRY_STATUS_CODES = {502, 503, 504}
 
+# Mapping from reaction emoji to local music file
+MUSIC_REACTIONS = {
+    "🎉": Path("music/kiffance.mp3"),
+    "🎺": Path("music/ole.mp3"),
+}
+
 
 def fetch_json(url: str, headers: dict | None = None,
                retries: int = 3, backoff: float = 1.0):
@@ -824,6 +830,68 @@ async def send_match_result_embed(channel, username, result, kills, deaths, assi
         await channel.send(embed=embed)
     except discord.DiscordException as e:
         logging.error(f"[send_match_result_embed] Failed to send match result: {e}")
+
+
+async def handle_music_reaction(payload: discord.RawReactionActionEvent):
+    """Play a sound when a user reacts to a victory or defeat embed."""
+    emoji = str(payload.emoji)
+    if emoji not in MUSIC_REACTIONS:
+        return
+
+    guild = client.get_guild(payload.guild_id)
+    if not guild:
+        return
+
+    channel = guild.get_channel(payload.channel_id)
+    if not channel:
+        return
+    try:
+        message = await channel.fetch_message(payload.message_id)
+    except discord.DiscordException as e:
+        logging.error(f"[handle_music_reaction] Failed to fetch message: {e}")
+        return
+
+    if message.author != client.user or not message.embeds:
+        return
+
+    title = message.embeds[0].title or ""
+    if "Victory" not in title and "Defeat" not in title:
+        return
+
+    member = guild.get_member(payload.user_id)
+    if not member or member.bot or not member.voice or not member.voice.channel:
+        return
+
+    audio_path = MUSIC_REACTIONS[emoji]
+    if not audio_path.exists():
+        logging.warning(f"[handle_music_reaction] Audio file {audio_path} not found")
+        return
+
+    voice_client = guild.voice_client
+    voice_channel = member.voice.channel
+    if not voice_client:
+        try:
+            voice_client = await voice_channel.connect()
+        except discord.DiscordException as e:
+            logging.error(f"[handle_music_reaction] Failed to connect: {e}")
+            return
+
+    try:
+        voice_client.play(discord.FFmpegPCMAudio(str(audio_path)))
+        while voice_client.is_playing():
+            await asyncio.sleep(1)
+    except discord.DiscordException as e:
+        logging.error(f"[handle_music_reaction] Playback error: {e}")
+    finally:
+        try:
+            await voice_client.disconnect()
+        except discord.DiscordException:
+            pass
+
+
+@client.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    await handle_music_reaction(payload)
 
 @client.event
 async def on_ready():
