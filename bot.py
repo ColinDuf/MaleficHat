@@ -443,8 +443,12 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
         return await interaction.followup.send(
             f"Unable to retrieve rank for {username}.", ephemeral=True
         )
-    tier_str = data["tier"]
-    rank_str = data["rank"]
+
+    # API returns `tier` (e.g. GOLD) and `rank` (e.g. IV). We store
+    # division first then rank category to match database order.
+    rank_str = data["tier"]
+    tier_str = data["rank"]
+
     lp = int(data["lp"])
 
     insert_player(
@@ -781,8 +785,13 @@ async def check_for_game_completion():
                         new_lp = old_lp
                     else:
                         try:
-                            tier_str = new_details["tier"]
-                            rank_str = new_details["rank"]
+
+                            # API returns tier (e.g. GOLD) and rank (e.g. II)
+                            # Convert so tier_str stores the division and
+                            # rank_str stores the rank category.
+                            rank_str = new_details["tier"]
+                            tier_str = new_details["rank"]
+          
                             new_lp = int(new_details["lp"])
                         except Exception as e:
                             logging.error(
