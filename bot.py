@@ -859,9 +859,9 @@ async def handle_music_reaction(payload: discord.RawReactionActionEvent):
 
     try:
         member = await guild.fetch_member(payload.user_id)
-        return
-
-    if member.bot or not member.voice or not member.voice.channel:
+        if member.bot or not member.voice or not member.voice.channel:
+            return
+    except (discord.NotFound, discord.DiscordException):
         return
 
     audio_path = MUSIC_REACTIONS[emoji]
