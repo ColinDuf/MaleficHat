@@ -267,6 +267,18 @@ def insert_leaderboard(guild_id: int) -> int:
     conn.close()
     return lb_id
 
+def delete_leaderboard(guild_id: int):
+    """Supprime le leaderboard d'une guilde et réinitialise son channel."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM leaderboard WHERE guild_id = ?", (guild_id,))
+    c.execute(
+        "UPDATE guild SET leaderboard_channel_id = NULL WHERE guild_id = ?",
+        (guild_id,)
+    )
+    conn.commit()
+    conn.close()
+
 def insert_leaderboard_member(leaderboard_id: int, player_puuid: str):
     """Ajoute un joueur au leaderboard."""
     conn = get_connection()

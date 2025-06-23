@@ -10,6 +10,7 @@ from fonction_bdd import (
     get_player_by_username,
     insert_leaderboard_member,
     delete_leaderboard_member,
+    delete_leaderboard,
     get_leaderboard_data, username_autocomplete
 )
 
@@ -203,6 +204,11 @@ async def update_leaderboard_message(channel_id: int, bot: discord.Client, guild
     if channel is None:
         logging.error(
             f"[update_leaderboard_message] Channel with id {channel_id} not found"
+        )
+        delete_leaderboard(guild_id)
+        logging.info(
+            f"[update_leaderboard_message] Dropped leaderboard for guild {guild_id}" \
+            f" because channel {channel_id} is missing"
         )
         return
 
