@@ -31,6 +31,11 @@ logging.basicConfig(
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 RIOT_API_KEY = os.getenv('RIOT_API_KEY')
 
+discord_logger = logging.getLogger("discord")
+discord_logger.setLevel(logging.WARNING)
+for noisy in ("discord.voice_client", "discord.voice_state", "discord.player"):
+    logging.getLogger(noisy).setLevel(logging.WARNING)
+
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
