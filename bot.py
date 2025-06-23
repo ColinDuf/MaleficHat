@@ -28,8 +28,8 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(funcName)s - %(message)s'
 )
 
-DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-RIOT_API_KEY = os.getenv('RIOT_API_KEY')
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN', '').strip()
+RIOT_API_KEY = os.getenv('RIOT_API_KEY', '').strip()
 
 discord_logger = logging.getLogger("discord")
 discord_logger.setLevel(logging.WARNING)
@@ -69,6 +69,10 @@ MUSIC_REACTIONS = {
 def fetch_json(url: str, headers: dict | None = None,
                retries: int = 3, backoff: float = 1.0):
     """GET JSON data with simple retry logic for 5xx errors."""
+    if headers:
+        headers = {str(k): str(v) for k, v in headers.items()
+                   if k is not None and v is not None}
+
     for attempt in range(1, retries + 1):
         try:
             resp = requests.get(url, headers=headers, timeout=10)
@@ -87,6 +91,10 @@ def fetch_json(url: str, headers: dict | None = None,
 
 async def async_fetch_json(url: str, headers: dict | None = None,
                            retries: int = 3, backoff: float = 1.0):
+    if headers:
+        headers = {str(k): str(v) for k, v in headers.items()
+                   if k is not None and v is not None}
+
     for attempt in range(1, retries + 1):
         try:
             async with aiohttp.ClientSession() as session:
@@ -119,20 +127,44 @@ def get_summoner_id(puuid):
     data = fetch_json(url, headers=headers)
     return data.get('id') if data else None
 
-def get_summoner_rank_details(puuid):
-    """Return detailed solo/duo rank info for a summoner."""
-    url = f"https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/{puuid}"
+def get_summoner_rank_details(summoner_id: str):
+    """Return detailed solo/duo rank info for a summoner ID."""
+    url = (
+        "https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/"
+        f"{summoner_id}"
+    )
     headers = {"X-Riot-Token": RIOT_API_KEY}
     data = fetch_json(url, headers=headers)
     if isinstance(data, list):
         for entry in data:
-            if entry.get('queueType') == 'RANKED_SOLO_5x5':
+            if entry.get("queueType") == "RANKED_SOLO_5x5":
                 return {
-                    'tier': entry.get('tier'),
-                    'rank': entry.get('rank'),
-                    'lp': entry.get('leaguePoints'),
-                    'wins': entry.get('wins'),
-                    'losses': entry.get('losses'),
+                    "tier": entry.get("tier"),
+                    "rank": entry.get("rank"),
+                    "lp": entry.get("leaguePoints"),
+                    "wins": entry.get("wins"),
+                    "losses": entry.get("losses"),
+                }
+    return None
+
+
+def get_summoner_rank_details_by_puuid(puuid: str):
+    """Return detailed solo/duo rank info using the PUUID directly."""
+    url = (
+        "https://euw1.api.riotgames.com/lol/league/v4/entries/by-puuid/"
+        f"{puuid}"
+    )
+    headers = {"X-Riot-Token": RIOT_API_KEY}
+    data = fetch_json(url, headers=headers)
+    if isinstance(data, list):
+        for entry in data:
+            if entry.get("queueType") == "RANKED_SOLO_5x5":
+                return {
+                    "tier": entry.get("tier"),
+                    "rank": entry.get("rank"),
+                    "lp": entry.get("leaguePoints"),
+                    "wins": entry.get("wins"),
+                    "losses": entry.get("losses"),
                 }
     return None
 
@@ -406,19 +438,16 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
         )
     last_match_id = last_ids[0]
 
-    rank_info = await asyncio.to_thread(get_summoner_rank, summoner_id)
-    if rank_info == "Unknown":
+    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid)
+    if not data:
         return await interaction.followup.send(
             f"Unable to retrieve rank for {username}.", ephemeral=True
         )
-    try:
-        rank_str, tier_str, lp_str, _ = rank_info.split()
-        lp = int(lp_str)
-    except Exception as e:
-        logging.error(f"Error parsing rank info: {e}")
-        return await interaction.followup.send(
-            "Error parsing rank information.", ephemeral=True
-        )
+    # API returns `tier` (e.g. GOLD) and `rank` (e.g. IV). We store
+    # division first then rank category to match database order.
+    rank_str = data["tier"]
+    tier_str = data["rank"]
+    lp = int(data["lp"])
 
     insert_player(
         summoner_id,
@@ -499,8 +528,8 @@ async def rank(interaction: discord.Interaction, username: str):
         await interaction.followup.send("This player is not registered here.", ephemeral=True)
         return
 
-    summoner_id = player[0]
-    data = await asyncio.to_thread(get_summoner_rank_details, summoner_id)
+    puuid = player[1]
+    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid)
     if not data:
         await interaction.followup.send("Unable to retrieve rank data.", ephemeral=True)
         return
@@ -565,12 +594,12 @@ async def career(interaction: discord.Interaction, username: str):
     if not player:
         await interaction.followup.send("This player is not registered!", ephemeral=True)
         return
-    summoner_id = player[0]
     puuid = player[1]
-    rank_info = await asyncio.to_thread(get_summoner_rank, summoner_id)
-    if rank_info == "Unknown":
+    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid)
+    if not data:
         await interaction.followup.send("Error retrieving player rank information!", ephemeral=True)
         return
+    rank_info = f"{data['tier']} {data['rank']} {data['lp']} LP"
     match_ids = await async_get_last_match(puuid, 10)
     if not match_ids or not isinstance(match_ids, list):
         await interaction.followup.send("Error retrieving match data or no matches found!", ephemeral=True)
@@ -745,17 +774,25 @@ async def check_for_game_completion():
                     rank_str = old_rank
                     new_lp = old_lp + lp_change
                 else:
-                    new_rank_info = await asyncio.to_thread(get_summoner_rank, summoner_id)
-                    if new_rank_info == "Unknown":
+                    new_details = await asyncio.to_thread(
+                        get_summoner_rank_details_by_puuid, puuid
+                    )
+                    if not new_details:
                         tier_str = old_tier
                         rank_str = old_rank
                         new_lp = old_lp
                     else:
                         try:
-                            rank_str, tier_str, lp_str, _ = new_rank_info.split()
-                            new_lp = int(lp_str)
+                            # API returns tier (e.g. GOLD) and rank (e.g. II)
+                            # Convert so tier_str stores the division and
+                            # rank_str stores the rank category.
+                            rank_str = new_details["tier"]
+                            tier_str = new_details["rank"]
+                            new_lp = int(new_details["lp"])
                         except Exception as e:
-                            logging.error(f"Error parsing new rank info: {e}")
+                            logging.error(
+                                f"Error parsing new rank info: {e}"
+                            )
                             tier_str = old_tier
                             rank_str = old_rank
                             new_lp = old_lp
