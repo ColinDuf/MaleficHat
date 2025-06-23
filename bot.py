@@ -847,8 +847,7 @@ async def handle_music_reaction(payload: discord.RawReactionActionEvent):
         return
     try:
         message = await channel.fetch_message(payload.message_id)
-    except discord.DiscordException as e:
-        logging.error(f"[handle_music_reaction] Failed to fetch message: {e}")
+    except discord.DiscordException:
         return
 
     if message.author != client.user or not message.embeds:
@@ -860,10 +859,6 @@ async def handle_music_reaction(payload: discord.RawReactionActionEvent):
 
     try:
         member = await guild.fetch_member(payload.user_id)
-    except discord.NotFound:
-        return
-    except discord.DiscordException as e:
-        logging.error(f"[handle_music_reaction] Failed to fetch member: {e}")
         return
 
     if member.bot or not member.voice or not member.voice.channel:
@@ -871,7 +866,6 @@ async def handle_music_reaction(payload: discord.RawReactionActionEvent):
 
     audio_path = MUSIC_REACTIONS[emoji]
     if not audio_path.exists():
-        logging.warning(f"[handle_music_reaction] Audio file {audio_path} not found")
         return
 
     voice_client = guild.voice_client
@@ -879,16 +873,15 @@ async def handle_music_reaction(payload: discord.RawReactionActionEvent):
     if not voice_client:
         try:
             voice_client = await voice_channel.connect()
-        except discord.DiscordException as e:
-            logging.error(f"[handle_music_reaction] Failed to connect: {e}")
+        except discord.DiscordException:
             return
 
     try:
         voice_client.play(discord.FFmpegPCMAudio(str(audio_path)))
         while voice_client.is_playing():
             await asyncio.sleep(1)
-    except discord.DiscordException as e:
-        logging.error(f"[handle_music_reaction] Playback error: {e}")
+    except discord.DiscordException:
+        pass
     finally:
         try:
             await voice_client.disconnect()
