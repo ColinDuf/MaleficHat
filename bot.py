@@ -705,108 +705,108 @@ async def check_for_game_completion():
                     players_in_game_messages.pop(player_key, None)
                     continue
 
-            (
-                summoner_id,
-                puuid,
-                username,
-                guild_id,
-                alert_channel_id,
-                last_match_id,
-                old_tier,
-                old_rank,
-                old_lp,
-                *_
-            ) = row
+                (
+                    summoner_id,
+                    puuid,
+                    username,
+                    guild_id,
+                    alert_channel_id,
+                    last_match_id,
+                    old_tier,
+                    old_rank,
+                    old_lp,
+                    *_
+                ) = row
 
-            if await async_is_in_game(puuid):
-                continue
+                if await async_is_in_game(puuid):
+                    continue
 
-            last_matches = await async_get_last_match(puuid, 1)
-            if not last_matches:
-                continue
-            new_match_id = last_matches[0]
-            if new_match_id == last_match_id:
-                continue
+                last_matches = await async_get_last_match(puuid, 1)
+                if not last_matches:
+                    continue
+                new_match_id = last_matches[0]
+                if new_match_id == last_match_id:
+                    continue
 
-            details = await async_get_match_details(new_match_id, puuid)
-            if not details:
-                continue
-            result, champion, kills, deaths, assists, game_duration, champ_img, damage = details
+                details = await async_get_match_details(new_match_id, puuid)
+                if not details:
+                    continue
+                result, champion, kills, deaths, assists, game_duration, champ_img, damage = details
 
-            key = (puuid, new_match_id)
-            if key in recent_match_lp_changes:
-                lp_change = recent_match_lp_changes[key][0]
-                tier_str = old_tier
-                rank_str = old_rank
-                new_lp = old_lp + lp_change
-            else:
-                new_rank_info = await asyncio.to_thread(get_summoner_rank, summoner_id)
-                if new_rank_info == "Unknown":
+                key = (puuid, new_match_id)
+                if key in recent_match_lp_changes:
+                    lp_change = recent_match_lp_changes[key][0]
                     tier_str = old_tier
                     rank_str = old_rank
-                    new_lp = old_lp
+                    new_lp = old_lp + lp_change
                 else:
-                    try:
-                        rank_str, tier_str, lp_str, _ = new_rank_info.split()
-                        new_lp = int(lp_str)
-                    except Exception as e:
-                        logging.error(f"Error parsing new rank info: {e}")
+                    new_rank_info = await asyncio.to_thread(get_summoner_rank, summoner_id)
+                    if new_rank_info == "Unknown":
                         tier_str = old_tier
                         rank_str = old_rank
                         new_lp = old_lp
+                    else:
+                        try:
+                            rank_str, tier_str, lp_str, _ = new_rank_info.split()
+                            new_lp = int(lp_str)
+                        except Exception as e:
+                            logging.error(f"Error parsing new rank info: {e}")
+                            tier_str = old_tier
+                            rank_str = old_rank
+                            new_lp = old_lp
 
-                lp_change = calculate_lp_change(
-                    old_tier, old_rank, old_lp,
-                    new_tier=tier_str, new_rank=rank_str, new_lp=new_lp
-                )
-                recent_match_lp_changes[key] = (lp_change, now)
+                    lp_change = calculate_lp_change(
+                        old_tier, old_rank, old_lp,
+                        new_tier=tier_str, new_rank=rank_str, new_lp=new_lp
+                    )
+                    recent_match_lp_changes[key] = (lp_change, now)
 
-                update_player_global(
+                    update_player_global(
+                        puuid,
+                        tier=tier_str,
+                        rank=rank_str,
+                        lp=new_lp,
+                        lp_change=lp_change
+                    )
+
+                update_player_guild(
                     puuid,
-                    tier=tier_str,
-                    rank=rank_str,
-                    lp=new_lp,
-                    lp_change=lp_change
+                    guild_id,
+                    last_match_id=new_match_id
                 )
 
-            update_player_guild(
-                puuid,
-                guild_id,
-                last_match_id=new_match_id
-            )
+                player_key = (puuid, guild_id)
+                in_game_msg = players_in_game_messages.pop(player_key, None)
+                if in_game_msg:
+                    try:
+                        await in_game_msg.delete()
+                    except discord.DiscordException as e:
+                        logging.error(f"[check_for_game_completion] Failed to delete in-game message: {e}")
 
-            player_key = (puuid, guild_id)
-            in_game_msg = players_in_game_messages.pop(player_key, None)
-            if in_game_msg:
-                try:
-                    await in_game_msg.delete()
-                except discord.DiscordException as e:
-                    logging.error(f"[check_for_game_completion] Failed to delete in-game message: {e}")
+                alert_channel = client.get_channel(int(alert_channel_id))
+                if alert_channel:
+                    await send_match_result_embed(
+                        alert_channel,
+                        username,
+                        result,
+                        kills,
+                        deaths,
+                        assists,
+                        champ_img,
+                        lp_change,
+                        damage
+                    )
 
-            alert_channel = client.get_channel(int(alert_channel_id))
-            if alert_channel:
-                await send_match_result_embed(
-                    alert_channel,
-                    username,
-                    result,
-                    kills,
-                    deaths,
-                    assists,
-                    champ_img,
-                    lp_change,
-                    damage
+                guild_data = get_guild(guild_id)  # (guild_id, leaderboard_channel_id)
+                lb_channel_id = guild_data[1] if guild_data else None
+                if lb_channel_id:
+                    await leaderboard.update_leaderboard_message(lb_channel_id, client, guild_id)
+
+                players_in_game.discard(player_key)
+                logging.info(
+                    f"[MATCH FINISHED] {username}: "
+                    f"Old LP: {old_lp} New LP: {new_lp} Difference: {lp_change}"
                 )
-
-            guild_data = get_guild(guild_id)  # (guild_id, leaderboard_channel_id)
-            lb_channel_id = guild_data[1] if guild_data else None
-            if lb_channel_id:
-                await leaderboard.update_leaderboard_message(lb_channel_id, client, guild_id)
-
-            players_in_game.discard(player_key)
-            logging.info(
-                f"[MATCH FINISHED] {username}: "
-                f"Old LP: {old_lp} New LP: {new_lp} Difference: {lp_change}"
-            )
 
         except Exception as e:
             logging.error(f"[check_for_game_completion] Unexpected error: {e}", exc_info=True)
@@ -855,11 +855,18 @@ async def handle_music_reaction(payload: discord.RawReactionActionEvent):
         return
 
     title = message.embeds[0].title or ""
-    if "Victory" not in title and "Defeat" not in title:
+    if not any(keyword in title for keyword in ("Victory", "Defeat", "is playing a game")):
         return
 
-    member = guild.get_member(payload.user_id)
-    if not member or member.bot or not member.voice or not member.voice.channel:
+    try:
+        member = await guild.fetch_member(payload.user_id)
+    except discord.NotFound:
+        return
+    except discord.DiscordException as e:
+        logging.error(f"[handle_music_reaction] Failed to fetch member: {e}")
+        return
+
+    if member.bot or not member.voice or not member.voice.channel:
         return
 
     audio_path = MUSIC_REACTIONS[emoji]
