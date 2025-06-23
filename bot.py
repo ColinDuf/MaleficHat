@@ -859,7 +859,6 @@ async def handle_music_reaction(payload: discord.RawReactionActionEvent):
 
     try:
         member = await guild.fetch_member(payload.user_id)
-    except (discord.NotFound, discord.DiscordException):
         return
 
     if member.bot or not member.voice or not member.voice.channel:
