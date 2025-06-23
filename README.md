@@ -36,6 +36,12 @@ They can be exported in your shell or placed in a `.env` file.
    python bot.py
    ```
 
+For the music reaction feature to work, place your MP3 files in the
+`music/` directory and install `ffmpeg` on your system. Reacting to either
+the victory/defeat or in‑game status embeds with a supported emoji will play
+a sound. The bot fetches member information as needed, so no privileged
+intents are required.
+
 When the bot loses permission to send alerts in a configured channel, it
 automatically disables alerts for that player in that server to avoid cluttering
 the logs.
