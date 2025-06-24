@@ -271,6 +271,16 @@ def delete_leaderboard(guild_id: int):
     """Supprime le leaderboard d'une guilde et réinitialise son channel."""
     conn = get_connection()
     c = conn.cursor()
+    c.execute(
+        "SELECT leaderboard_id FROM leaderboard WHERE guild_id = ?",
+        (guild_id,)
+    )
+    row = c.fetchone()
+    if row:
+        c.execute(
+            "DELETE FROM leaderboard_player WHERE leaderboard_id = ?",
+            (row[0],),
+        )
     c.execute("DELETE FROM leaderboard WHERE guild_id = ?", (guild_id,))
     c.execute(
         "UPDATE guild SET leaderboard_channel_id = NULL WHERE guild_id = ?",
