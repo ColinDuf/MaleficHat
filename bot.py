@@ -115,22 +115,61 @@ async def async_fetch_json(url: str, headers: dict | None = None,
 # Fonctions d'accès à l'API Riot (appel synchrones via requests)
 ##############################################################################
 
-def get_puuid(username, hashtag):
-    url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{username}/{hashtag}"
+REGION_TO_ROUTING = {
+    "euw1": "europe",
+    "eun1": "europe",
+    "tr1": "europe",
+    "ru": "europe",
+    "na1": "americas",
+    "br1": "americas",
+    "la1": "americas",
+    "la2": "americas",
+    "oc1": "americas",
+    "kr": "asia",
+    "jp1": "asia",
+}
+
+# Allow shorthand region names without the trailing "1" used by Riot's platform codes
+REGION_ALIASES = {
+    "euw": "euw1",
+    "eune": "eun1",
+    "na": "na1",
+    "lan": "la1",
+    "las": "la2",
+    "oce": "oc1",
+    "br": "br1",
+    "tr": "tr1",
+    "jp": "jp1",
+    # Regions with identical shorthand and platform code
+    "ru": "ru",
+    "kr": "kr",
+}
+
+def normalize_region(region: str) -> str:
+    """Return the platform region code for a given user input."""
+    region = region.lower()
+    return REGION_ALIASES.get(region, region)
+
+def get_puuid(username, hashtag, region):
+    region_code = normalize_region(region)
+    routing = REGION_TO_ROUTING.get(region_code, "europe")
+    url = f"https://{routing}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{username}/{hashtag}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     data = fetch_json(url, headers=headers)
     return data.get('puuid') if data else None
 
-def get_summoner_id(puuid):
-    url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
+def get_summoner_id(puuid, region):
+    region_code = normalize_region(region)
+    url = f"https://{region_code}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     data = fetch_json(url, headers=headers)
     return data.get('id') if data else None
 
-def get_summoner_rank_details(summoner_id: str):
+def get_summoner_rank_details(summoner_id: str, region: str):
     """Return detailed solo/duo rank info for a summoner ID."""
+    region_code = normalize_region(region)
     url = (
-        "https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/"
+        f"https://{region_code}.api.riotgames.com/lol/league/v4/entries/by-summoner/"
         f"{summoner_id}"
     )
     headers = {"X-Riot-Token": RIOT_API_KEY}
@@ -148,10 +187,11 @@ def get_summoner_rank_details(summoner_id: str):
     return None
 
 
-def get_summoner_rank_details_by_puuid(puuid: str):
+def get_summoner_rank_details_by_puuid(puuid: str, region: str):
     """Return detailed solo/duo rank info using the PUUID directly."""
+    region_code = normalize_region(region)
     url = (
-        "https://euw1.api.riotgames.com/lol/league/v4/entries/by-puuid/"
+        f"https://{region_code}.api.riotgames.com/lol/league/v4/entries/by-puuid/"
         f"{puuid}"
     )
     headers = {"X-Riot-Token": RIOT_API_KEY}
@@ -174,8 +214,10 @@ def get_summoner_rank(summoner_id):
         return f"{details['tier']} {details['rank']} {details['lp']} LP"
     return "Unknown"
 
-def get_last_match(puuid, nb_last_match):
-    url = f"https://europe.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type=ranked&count={nb_last_match}"
+def get_last_match(puuid, nb_last_match, region):
+    region_code = normalize_region(region)
+    routing = REGION_TO_ROUTING.get(region_code, "europe")
+    url = f"https://{routing}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type=ranked&count={nb_last_match}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     matches = fetch_json(url, headers=headers)
     if isinstance(matches, list) and matches:
@@ -218,7 +260,7 @@ def init_champion_mapping() -> None:
             continue
 
 
-def get_match_details(match_id: str, puuid: str):
+def get_match_details(match_id: str, puuid: str, region: str):
     """
     Récupère les détails d'un match classé (.match/v5) pour un joueur donné (par son PUUID).
     Construit aussi l’URL de l’image du champion en utilisant la version Data Dragon la plus récente.
@@ -227,7 +269,9 @@ def get_match_details(match_id: str, puuid: str):
         logging.error("No match ID provided.")
         return None
 
-    url = f"https://europe.api.riotgames.com/lol/match/v5/matches/{match_id}"
+    region_code = normalize_region(region)
+    routing = REGION_TO_ROUTING.get(region_code, "europe")
+    url = f"https://{routing}.api.riotgames.com/lol/match/v5/matches/{match_id}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     match_data = fetch_json(url, headers=headers)
     if not match_data:
@@ -284,9 +328,12 @@ async def check_username_changes():
     while True:
         players = await async_get_all_players()
         for player in players:
-            summoner_id, puuid, old_username, *_ = player
+            summoner_id, puuid, old_username, *rest = player
+            region = rest[-1]
 
-            url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
+            region_code = normalize_region(region)
+            routing = REGION_TO_ROUTING.get(region_code, "europe")
+            url = f"https://{routing}.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
             headers = {"X-Riot-Token": RIOT_API_KEY}
             data = await async_fetch_json(url, headers=headers)
             if data:
@@ -350,12 +397,13 @@ def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
         return 0
 
 
-async def is_in_game(puuid: str) -> int | None:
+async def is_in_game(puuid: str, region: str) -> int | None:
     """
     Si le joueur est en ranked solo/duo (queue 420), renvoie son championId (int).
     Sinon renvoie None.
     """
-    url = f"https://euw1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
+    region_code = normalize_region(region)
+    url = f"https://{region_code}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
 
     data = await async_fetch_json(url, headers=headers)
@@ -375,14 +423,14 @@ async def is_in_game(puuid: str) -> int | None:
 async def async_get_all_players():
     return await asyncio.to_thread(get_all_players)
 
-async def async_is_in_game(puuid):
-    return await is_in_game(puuid)
+async def async_is_in_game(puuid, region):
+    return await is_in_game(puuid, region)
 
-async def async_get_last_match(puuid, nb_last_match):
-    return await asyncio.to_thread(get_last_match, puuid, nb_last_match)
+async def async_get_last_match(puuid, nb_last_match, region):
+    return await asyncio.to_thread(get_last_match, puuid, nb_last_match, region)
 
-async def async_get_match_details(match_id, puuid):
-    return await asyncio.to_thread(get_match_details, match_id, puuid)
+async def async_get_match_details(match_id, puuid, region):
+    return await asyncio.to_thread(get_match_details, match_id, puuid, region)
 
 
 ###############################################################################
@@ -395,9 +443,15 @@ async def async_get_match_details(match_id, puuid):
 )
 @app_commands.describe(
     gamename="The player's Riot in game name",
-    tagline="The player's #"
+    tagline="The player's #",
+    region="Platform region code (e.g. euw, na)"
 )
-async def register(interaction: discord.Interaction, gamename: str, tagline: str):
+async def register(
+    interaction: discord.Interaction,
+    gamename: str,
+    tagline: str,
+    region: str = "euw",
+):
     await interaction.response.defer(ephemeral=True)
     username = f"{gamename.upper()}#{tagline.upper()}"
     try:
@@ -408,12 +462,12 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
             ephemeral=True
         )
 
-    puuid = await asyncio.to_thread(get_puuid, riot_username, hashtag)
+    puuid = await asyncio.to_thread(get_puuid, riot_username, hashtag, region)
     if not puuid:
         return await interaction.followup.send(
             f"Error fetching PUUID for {username}.", ephemeral=True
         )
-    summoner_id = await asyncio.to_thread(get_summoner_id, puuid)
+    summoner_id = await asyncio.to_thread(get_summoner_id, puuid, region)
     if not summoner_id:
         return await interaction.followup.send(
             f"Error fetching Summoner ID for {username}.", ephemeral=True
@@ -431,14 +485,14 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
             ephemeral=True
         )
 
-    last_ids = await async_get_last_match(puuid, 1)
+    last_ids = await async_get_last_match(puuid, 1, region)
     if not last_ids:
         return await interaction.followup.send(
             f"No ranked matches found for {username}.", ephemeral=True
         )
     last_match_id = last_ids[0]
 
-    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid)
+    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, region)
     if not data:
         return await interaction.followup.send(
             f"Unable to retrieve rank for {username}.", ephemeral=True
@@ -455,6 +509,7 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
         summoner_id,
         puuid,
         username,
+        normalize_region(region),
         tier_str,
         rank_str,
         lp
@@ -531,7 +586,8 @@ async def rank(interaction: discord.Interaction, username: str):
         return
 
     puuid = player[1]
-    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid)
+    region = player[-1]
+    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, region)
     if not data:
         await interaction.followup.send("Unable to retrieve rank data.", ephemeral=True)
         return
@@ -597,18 +653,19 @@ async def career(interaction: discord.Interaction, username: str):
         await interaction.followup.send("This player is not registered!", ephemeral=True)
         return
     puuid = player[1]
-    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid)
+    region = player[-1]
+    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, region)
     if not data:
         await interaction.followup.send("Error retrieving player rank information!", ephemeral=True)
         return
     rank_info = f"{data['tier']} {data['rank']} {data['lp']} LP"
-    match_ids = await async_get_last_match(puuid, 10)
+    match_ids = await async_get_last_match(puuid, 10, region)
     if not match_ids or not isinstance(match_ids, list):
         await interaction.followup.send("Error retrieving match data or no matches found!", ephemeral=True)
         return
     match_results = []
     for match_id in match_ids:
-        details = await async_get_match_details(match_id, puuid)
+        details = await async_get_match_details(match_id, puuid, region)
         if details:
             result, champion, kills, deaths, assists, game_duration, champion_image, damage = details
             match_results.append({
@@ -653,12 +710,13 @@ async def check_ingame():
     while True:
         try:
             players = await async_get_all_players()
-            for summoner_id, puuid, username, guild_id, channel_id, *_ in players:
+            for summoner_id, puuid, username, guild_id, channel_id, *rest in players:
+                region = rest[-1]
                 channel = client.get_channel(int(channel_id))
                 if not channel:
                     continue
 
-                champion_id = await is_in_game(puuid)
+                champion_id = await is_in_game(puuid, region)
 
                 player_key = (puuid, guild_id)
 
@@ -751,20 +809,21 @@ async def check_for_game_completion():
                     old_tier,
                     old_rank,
                     old_lp,
-                    *_
+                    *rest
                 ) = row
+                region = rest[-1]
 
-                if await async_is_in_game(puuid):
+                if await async_is_in_game(puuid, region):
                     continue
 
-                last_matches = await async_get_last_match(puuid, 1)
+                last_matches = await async_get_last_match(puuid, 1, region)
                 if not last_matches:
                     continue
                 new_match_id = last_matches[0]
                 if new_match_id == last_match_id:
                     continue
 
-                details = await async_get_match_details(new_match_id, puuid)
+                details = await async_get_match_details(new_match_id, puuid, region)
                 if not details:
                     continue
                 result, champion, kills, deaths, assists, game_duration, champ_img, damage = details
@@ -777,7 +836,7 @@ async def check_for_game_completion():
                     new_lp = old_lp + lp_change
                 else:
                     new_details = await asyncio.to_thread(
-                        get_summoner_rank_details_by_puuid, puuid
+                        get_summoner_rank_details_by_puuid, puuid, region
                     )
                     if not new_details:
                         tier_str = old_tier

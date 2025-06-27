@@ -21,6 +21,7 @@ def create_db():
             username TEXT NOT NULL,
             puuid TEXT PRIMARY KEY,
             summoner_id TEXT NOT NULL,
+            region TEXT NOT NULL DEFAULT 'euw1',
             rank TEXT,
             tier TEXT,
             lp INTEGER,

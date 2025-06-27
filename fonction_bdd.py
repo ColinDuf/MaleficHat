@@ -13,6 +13,7 @@ def get_connection():
 def insert_player(summoner_id: str,
                   puuid: str,
                   username: str,
+                  region: str,
                   tier: str,
                   rank: str,
                   lp: int):
@@ -24,19 +25,20 @@ def insert_player(summoner_id: str,
     # Insert initial si absent
     c.execute("""
               INSERT OR IGNORE INTO player
-              (puuid, username, summoner_id, tier, rank, lp, lp_24h, lp_7d, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-              """, (puuid, username, summoner_id, tier, rank, lp))
+              (puuid, username, summoner_id, region, tier, rank, lp, lp_24h, lp_7d, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+              """, (puuid, username, summoner_id, region, tier, rank, lp))
     c.execute("""
               UPDATE player
               SET username = ?,
                   summoner_id = ?,
+                  region = ?,
                   tier = ?,
                   rank = ?,
                   lp = ?,
                   updated_at = CURRENT_TIMESTAMP
               WHERE puuid = ?
-              """, (username, summoner_id, tier, rank, lp, puuid))
+              """, (username, summoner_id, region, tier, rank, lp, puuid))
     conn.commit()
     conn.close()
 
@@ -159,7 +161,7 @@ def get_player(puuid: str, guild_id: int):
               SELECT
                   p.summoner_id, p.puuid, p.username,
                   pg.guild_id, pg.channel_id, pg.last_match_id,
-                  p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
+                  p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d, p.region
               FROM player p
                        JOIN player_guild pg ON p.puuid = pg.player_puuid
               WHERE p.puuid = ? AND pg.guild_id = ?
@@ -176,7 +178,7 @@ def get_all_players():
               SELECT
                   p.summoner_id, p.puuid, p.username,
                   pg.guild_id, pg.channel_id, pg.last_match_id,
-                  p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
+                  p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d, p.region
               FROM player p
                        JOIN player_guild pg ON p.puuid = pg.player_puuid
               """)
@@ -193,7 +195,7 @@ def get_player_by_username(username: str, guild_id: int = None):
                   SELECT
                       p.summoner_id, p.puuid, p.username,
                       pg.guild_id, pg.channel_id, pg.last_match_id,
-                      p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
+                      p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d, p.region
                   FROM player p
                            JOIN player_guild pg ON p.puuid = pg.player_puuid
                   WHERE p.username = ? AND pg.guild_id = ?
