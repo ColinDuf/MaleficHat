@@ -36,6 +36,10 @@ They can be exported in your shell or placed in a `.env` file.
    python bot.py
    ```
 
+When registering a player with `/register`, you can now provide the platform
+region (e.g. `euw`, `na`). The bot will use this region for all Riot API
+requests for that player.
+
 For the music reaction feature to work, place your MP3 files in the
 `music/` directory and install `ffmpeg` on your system. Reacting to either
 the victory/defeat or in‑game status embeds with a supported emoji will play
