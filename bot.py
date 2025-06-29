@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from create_db import create_db
 from leaderboard_tasks import reset_lp_scheduler
 import leaderboard
+import register_stats
 from fonction_bdd import (insert_player, get_player_by_username, delete_player,
                           username_autocomplete, get_player, get_all_players,
                           get_guild, insert_guild, insert_player_guild,
@@ -51,6 +52,7 @@ discord_handler.setFormatter(formatter)
 logging.getLogger().addHandler(discord_handler)
 
 players_in_game: set[tuple[str, int]] = set()
+client.players_in_game = players_in_game
 players_in_game_messages: dict[tuple[str, int], discord.Message] = {}
 CHAMPION_MAPPING: dict[int, str] = {}
 recent_match_lp_changes: dict[tuple[str, str], tuple[int, float]] = {}
@@ -534,6 +536,9 @@ async def register(
         f"> Alerts will be sent in <#{channel_id}>",
         ephemeral=True
     )
+    await register_stats.update_register_message(
+        register_stats.ADMIN_CHANNEL_ID, client
+    )
     return None
 
 
@@ -568,6 +573,9 @@ async def unregister(interaction: discord.Interaction, username: str):
         f"✅ Player **{username}** unregistered " +
         ("and removed from the leaderboard." if lb_id is not None else "."),
         ephemeral=True
+    )
+    await register_stats.update_register_message(
+        register_stats.ADMIN_CHANNEL_ID, client
     )
     return None
 
@@ -758,6 +766,9 @@ async def check_ingame():
                     if msg:
                         players_in_game.add(player_key)
                         players_in_game_messages[player_key] = msg
+                        await register_stats.update_register_message(
+                            register_stats.ADMIN_CHANNEL_ID, client
+                        )
 
                     # Don't remove the player here. The check_for_game_completion task
                     # will take care of cleanup once the match ID changes.
@@ -797,6 +808,9 @@ async def check_for_game_completion():
                 if not row:
                     players_in_game.discard(player_key)
                     players_in_game_messages.pop(player_key, None)
+                    await register_stats.update_register_message(
+                        register_stats.ADMIN_CHANNEL_ID, client
+                    )
                     continue
 
                 (
@@ -908,6 +922,9 @@ async def check_for_game_completion():
                     await leaderboard.update_leaderboard_message(lb_channel_id, client, guild_id)
 
                 players_in_game.discard(player_key)
+                await register_stats.update_register_message(
+                    register_stats.ADMIN_CHANNEL_ID, client
+                )
                 logging.info(
                     f"[MATCH FINISHED] {username}: "
                     f"Old LP: {old_lp} New LP: {new_lp} Difference: {lp_change}"
