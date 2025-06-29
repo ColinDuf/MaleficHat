@@ -28,6 +28,7 @@ def test_check_for_game_completion_handles_missing_row(bot_module):
     with (
         patch.object(bot_module, 'async_get_all_players', async_get_all_players),
         patch('asyncio.sleep', sleep_mock),
+        patch.object(bot_module.register_stats, 'update_register_message', new=AsyncMock()),
     ):
         with pytest.raises(asyncio.CancelledError):
             asyncio.run(bot_module.check_for_game_completion())
