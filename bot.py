@@ -107,7 +107,7 @@ async def async_fetch_json(url: str, headers: dict | None = None,
                         return None
                     resp.raise_for_status()
                     return await resp.json()
-        except aiohttp.ClientError as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             if attempt == retries:
                 logging.error(f"Error fetching {url}: {e}")
                 return None
@@ -309,6 +309,10 @@ def get_match_details(match_id: str, puuid: str, region: str):
                     f"{ddragon_version}/img/champion/{champ_slug}.png"
                 )
 
+                early_surrender = match_data.get("info", {}).get(
+                    "gameEndedInEarlySurrender", False
+                )
+
                 return (
                     result,
                     champion,
@@ -317,7 +321,8 @@ def get_match_details(match_id: str, puuid: str, region: str):
                     assists,
                     game_duration,
                     champion_image,
-                    damage
+                    damage,
+                    early_surrender,
                 )
 
     return None
@@ -675,7 +680,8 @@ async def career(interaction: discord.Interaction, username: str):
     for match_id in match_ids:
         details = await async_get_match_details(match_id, puuid, region)
         if details:
-            result, champion, kills, deaths, assists, game_duration, champion_image, damage = details
+            (result, champion, kills, deaths, assists, game_duration,
+             champion_image, damage, _early_surrender) = details
             match_results.append({
                 "result": result,
                 "champion": champion,
@@ -840,7 +846,17 @@ async def check_for_game_completion():
                 details = await async_get_match_details(new_match_id, puuid, region)
                 if not details:
                     continue
-                result, champion, kills, deaths, assists, game_duration, champ_img, damage = details
+                (
+                    result,
+                    champion,
+                    kills,
+                    deaths,
+                    assists,
+                    game_duration,
+                    champ_img,
+                    damage,
+                    early_surrender,
+                ) = details
 
                 key = (puuid, new_match_id)
                 if key in recent_match_lp_changes:
@@ -913,7 +929,8 @@ async def check_for_game_completion():
                         assists,
                         champ_img,
                         lp_change,
-                        damage
+                        damage,
+                        early_surrender,
                     )
 
                 guild_data = get_guild(guild_id)  # (guild_id, leaderboard_channel_id)
@@ -936,13 +953,28 @@ async def check_for_game_completion():
         await asyncio.sleep(10)
 
 
-async def send_match_result_embed(channel, username, result, kills, deaths, assists,
-                                  champion_image, lp_change, damage):
-    game_result = "Victory" if result == ':green_circle:' else "Defeat"
+async def send_match_result_embed(
+    channel,
+    username,
+    result,
+    kills,
+    deaths,
+    assists,
+    champion_image,
+    lp_change,
+    damage,
+    early_surrender: bool = False,
+):
+    if early_surrender:
+        game_result = "Early Surrender"
+        color = discord.Color.orange()
+    else:
+        game_result = "Victory" if result == ':green_circle:' else "Defeat"
+        color = discord.Color.green() if result == ':green_circle:' else discord.Color.red()
     lp_text = "LP Win" if lp_change > 0 else "LP Lost"
     embed = discord.Embed(
         title=f"{game_result} for {username}",
-        color=discord.Color.green() if result == ':green_circle:' else discord.Color.red()
+        color=color,
     )
     embed.add_field(name="K/D/A", value=f"{kills}/{deaths}/{assists}", inline=True)
     embed.add_field(name="Damage", value=f"{damage}", inline=True)
