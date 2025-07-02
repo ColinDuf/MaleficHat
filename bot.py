@@ -10,12 +10,23 @@ from create_db import create_db
 from leaderboard_tasks import reset_lp_scheduler
 import leaderboard
 import register_stats
-from fonction_bdd import (insert_player, get_player_by_username, delete_player,
-                          username_autocomplete, get_player, get_all_players,
-                          get_guild, insert_guild, insert_player_guild,
-                          update_player_guild, update_player_global,
-                          get_leaderboard_by_guild, delete_leaderboard_member,
-                          count_players)
+from fonction_bdd import (
+    insert_player,
+    get_player_by_username,
+    delete_player,
+    username_autocomplete,
+    get_player,
+    get_all_players,
+    get_guild,
+    insert_guild,
+    insert_player_guild,
+    update_player_guild,
+    update_player_global,
+    get_leaderboard_by_guild,
+    delete_leaderboard_member,
+    count_players,
+    set_guild_flex_mode,
+)
 import requests
 import tracemalloc
 from pathlib import Path
@@ -167,8 +178,8 @@ def get_summoner_id(puuid, region):
     data = fetch_json(url, headers=headers)
     return data.get('id') if data else None
 
-def get_summoner_rank_details(summoner_id: str, region: str):
-    """Return detailed solo/duo rank info for a summoner ID."""
+def get_summoner_rank_details(summoner_id: str, region: str, flex: bool = False):
+    """Return detailed rank info for a summoner ID."""
     region_code = normalize_region(region)
     url = (
         f"https://{region_code}.api.riotgames.com/lol/league/v4/entries/by-summoner/"
@@ -176,9 +187,10 @@ def get_summoner_rank_details(summoner_id: str, region: str):
     )
     headers = {"X-Riot-Token": RIOT_API_KEY}
     data = fetch_json(url, headers=headers)
+    queue = "RANKED_FLEX_SR" if flex else "RANKED_SOLO_5x5"
     if isinstance(data, list):
         for entry in data:
-            if entry.get("queueType") == "RANKED_SOLO_5x5":
+            if entry.get("queueType") == queue:
                 return {
                     "tier": entry.get("tier"),
                     "rank": entry.get("rank"),
@@ -189,8 +201,8 @@ def get_summoner_rank_details(summoner_id: str, region: str):
     return None
 
 
-def get_summoner_rank_details_by_puuid(puuid: str, region: str):
-    """Return detailed solo/duo rank info using the PUUID directly."""
+def get_summoner_rank_details_by_puuid(puuid: str, region: str, flex: bool = False):
+    """Return detailed rank info using the PUUID directly."""
     region_code = normalize_region(region)
     url = (
         f"https://{region_code}.api.riotgames.com/lol/league/v4/entries/by-puuid/"
@@ -198,9 +210,10 @@ def get_summoner_rank_details_by_puuid(puuid: str, region: str):
     )
     headers = {"X-Riot-Token": RIOT_API_KEY}
     data = fetch_json(url, headers=headers)
+    queue = "RANKED_FLEX_SR" if flex else "RANKED_SOLO_5x5"
     if isinstance(data, list):
         for entry in data:
-            if entry.get("queueType") == "RANKED_SOLO_5x5":
+            if entry.get("queueType") == queue:
                 return {
                     "tier": entry.get("tier"),
                     "rank": entry.get("rank"),
@@ -262,7 +275,7 @@ def init_champion_mapping() -> None:
             continue
 
 
-def get_match_details(match_id: str, puuid: str, region: str):
+def get_match_details(match_id: str, puuid: str, region: str, flex: bool = False):
     """
     Récupère les détails d'un match classé (.match/v5) pour un joueur donné (par son PUUID).
     Construit aussi l’URL de l’image du champion en utilisant la version Data Dragon la plus récente.
@@ -279,7 +292,8 @@ def get_match_details(match_id: str, puuid: str, region: str):
     if not match_data:
         return None
     game_mode = match_data.get("info", {}).get("queueId")
-    if game_mode == 420:
+    valid_queues = {420, 440} if flex else {420}
+    if game_mode in valid_queues:
         # Récupère la version Data Dragon à la volée
         ddragon_version = get_ddragon_latest_version()
 
@@ -336,7 +350,7 @@ async def check_username_changes():
         players = await async_get_all_players()
         for player in players:
             summoner_id, puuid, old_username, *rest = player
-            region = rest[-1]
+            region = rest[-2]
 
             region_code = normalize_region(region)
             routing = REGION_TO_ROUTING.get(region_code, "europe")
@@ -404,10 +418,10 @@ def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
         return 0
 
 
-async def is_in_game(puuid: str, region: str) -> int | None:
+async def is_in_game(puuid: str, region: str, flex: bool = False) -> int | None:
     """
-    Si le joueur est en ranked solo/duo (queue 420), renvoie son championId (int).
-    Sinon renvoie None.
+    Renvoie le championId du joueur s'il est en partie classée. Solo/duo par
+    défaut, ou Flex si ``flex`` est ``True``.
     """
     region_code = normalize_region(region)
     url = f"https://{region_code}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
@@ -416,7 +430,8 @@ async def is_in_game(puuid: str, region: str) -> int | None:
     data = await async_fetch_json(url, headers=headers)
     if not data:
         return None
-    if data.get("gameQueueConfigId") != 420:
+    valid_queues = {420, 440} if flex else {420}
+    if data.get("gameQueueConfigId") not in valid_queues:
         return None
     for participant in data.get("participants", []):
         if participant.get("puuid") == puuid:
@@ -430,14 +445,14 @@ async def is_in_game(puuid: str, region: str) -> int | None:
 async def async_get_all_players():
     return await asyncio.to_thread(get_all_players)
 
-async def async_is_in_game(puuid, region):
-    return await is_in_game(puuid, region)
+async def async_is_in_game(puuid, region, flex: bool = False):
+    return await is_in_game(puuid, region, flex)
 
 async def async_get_last_match(puuid, nb_last_match, region):
     return await asyncio.to_thread(get_last_match, puuid, nb_last_match, region)
 
-async def async_get_match_details(match_id, puuid, region):
-    return await asyncio.to_thread(get_match_details, match_id, puuid, region)
+async def async_get_match_details(match_id, puuid, region, flex: bool = False):
+    return await asyncio.to_thread(get_match_details, match_id, puuid, region, flex)
 
 
 ###############################################################################
@@ -483,8 +498,12 @@ async def register(
     guild_id = interaction.guild.id
     channel_id = interaction.channel.id
 
-    if not get_guild(guild_id):
+    guild_row = get_guild(guild_id)
+    if not guild_row:
         insert_guild(guild_id, None)
+        flex = False
+    else:
+        flex = bool(guild_row[2])
 
     if get_player(puuid, guild_id):
         return await interaction.followup.send(
@@ -590,6 +609,8 @@ async def unregister(interaction: discord.Interaction, username: str):
 async def rank(interaction: discord.Interaction, username: str):
     """Show current rank for a registered player."""
     guild_id = interaction.guild.id
+    guild_row = get_guild(guild_id)
+    flex = bool(guild_row[2]) if guild_row else False
     username = username.upper()
     await interaction.response.defer()
 
@@ -600,7 +621,7 @@ async def rank(interaction: discord.Interaction, username: str):
 
     puuid = player[1]
     region = player[-1]
-    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, region)
+    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, region, flex)
     if not data:
         await interaction.followup.send("Unable to retrieve rank data.", ephemeral=True)
         return
@@ -659,6 +680,8 @@ async def rank(interaction: discord.Interaction, username: str):
 async def career(interaction: discord.Interaction, username: str):
     """Show the last 10 ranked Solo/Duo games for a registered player."""
     guild_id = interaction.guild.id
+    guild_row = get_guild(guild_id)
+    flex = bool(guild_row[2]) if guild_row else False
     username = username.upper()
     await interaction.response.defer()
     player = get_player_by_username(username, guild_id)
@@ -667,7 +690,7 @@ async def career(interaction: discord.Interaction, username: str):
         return
     puuid = player[1]
     region = player[-1]
-    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, region)
+    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, region, flex)
     if not data:
         await interaction.followup.send("Error retrieving player rank information!", ephemeral=True)
         return
@@ -678,7 +701,7 @@ async def career(interaction: discord.Interaction, username: str):
         return
     match_results = []
     for match_id in match_ids:
-        details = await async_get_match_details(match_id, puuid, region)
+        details = await async_get_match_details(match_id, puuid, region, flex)
         if details:
             (result, champion, kills, deaths, assists, game_duration,
              champion_image, damage, _early_surrender) = details
@@ -711,6 +734,27 @@ async def career(interaction: discord.Interaction, username: str):
             embed.add_field(name='\u200b', value='\u200b', inline=True)
     await interaction.followup.send(embed=embed)
 
+
+@tree.command(name="flex", description="Enable or disable flex mode for this server")
+@app_commands.describe(mode="on or off")
+async def flex(interaction: discord.Interaction, mode: str):
+    guild_id = interaction.guild.id
+    if mode.lower() not in {"on", "off"}:
+        await interaction.response.send_message("Use 'on' or 'off'.", ephemeral=True)
+        return
+    enabled = mode.lower() == "on"
+
+    guild_row = get_guild(guild_id)
+    if not guild_row:
+        insert_guild(guild_id, None, int(enabled))
+    else:
+        set_guild_flex_mode(guild_id, enabled)
+
+    await interaction.response.send_message(
+        f"Flex mode {'enabled' if enabled else 'disabled'}.",
+        ephemeral=True,
+    )
+
 ###############################################################################
 # Tâches de fond
 ###############################################################################
@@ -725,12 +769,13 @@ async def check_ingame():
         try:
             players = await async_get_all_players()
             for summoner_id, puuid, username, guild_id, channel_id, *rest in players:
-                region = rest[-1]
+                region = rest[-2]
+                flex = bool(rest[-1])
                 channel = client.get_channel(int(channel_id))
                 if not channel:
                     continue
 
-                champion_id = await is_in_game(puuid, region)
+                champion_id = await is_in_game(puuid, region, flex)
 
                 player_key = (puuid, guild_id)
 
@@ -831,9 +876,10 @@ async def check_for_game_completion():
                     old_lp,
                     *rest
                 ) = row
-                region = rest[-1]
+                region = rest[-2]
+                flex = bool(rest[-1])
 
-                if await async_is_in_game(puuid, region):
+                if await async_is_in_game(puuid, region, flex):
                     continue
 
                 last_matches = await async_get_last_match(puuid, 1, region)
@@ -843,7 +889,7 @@ async def check_for_game_completion():
                 if new_match_id == last_match_id:
                     continue
 
-                details = await async_get_match_details(new_match_id, puuid, region)
+                details = await async_get_match_details(new_match_id, puuid, region, flex)
                 if not details:
                     continue
                 (
@@ -896,13 +942,14 @@ async def check_for_game_completion():
                     )
                     recent_match_lp_changes[key] = (lp_change, now)
 
-                    update_player_global(
-                        puuid,
-                        tier=tier_str,
-                        rank=rank_str,
-                        lp=new_lp,
-                        lp_change=lp_change
-                    )
+                    if not flex:
+                        update_player_global(
+                            puuid,
+                            tier=tier_str,
+                            rank=rank_str,
+                            lp=new_lp,
+                            lp_change=lp_change
+                        )
 
                 update_player_guild(
                     puuid,
@@ -935,7 +982,7 @@ async def check_for_game_completion():
 
                 guild_data = get_guild(guild_id)  # (guild_id, leaderboard_channel_id)
                 lb_channel_id = guild_data[1] if guild_data else None
-                if lb_channel_id:
+                if lb_channel_id and not flex:
                     await leaderboard.update_leaderboard_message(lb_channel_id, client, guild_id)
 
                 players_in_game.discard(player_key)
