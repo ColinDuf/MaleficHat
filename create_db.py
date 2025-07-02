@@ -12,7 +12,8 @@ def create_db():
     c.execute("""
         CREATE TABLE IF NOT EXISTS guild (
             guild_id INTEGER PRIMARY KEY,
-            leaderboard_channel_id INTEGER
+            leaderboard_channel_id INTEGER,
+            flex_enabled INTEGER DEFAULT 0
         );
         """)
 
