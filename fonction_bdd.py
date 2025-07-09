@@ -16,7 +16,10 @@ def insert_player(summoner_id: str,
                   region: str,
                   tier: str,
                   rank: str,
-                  lp: int):
+                  lp: int,
+                  flex_tier: str | None = None,
+                  flex_rank: str | None = None,
+                  flex_lp: int | None = None):
     """
     Insert or update des données globales du joueur.
     """
@@ -25,9 +28,16 @@ def insert_player(summoner_id: str,
     # Insert initial si absent
     c.execute("""
               INSERT OR IGNORE INTO player
-              (puuid, username, summoner_id, region, tier, rank, lp, lp_24h, lp_7d, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-              """, (puuid, username, summoner_id, region, tier, rank, lp))
+              (puuid, username, summoner_id, region,
+               tier, rank, lp,
+               flex_rank, flex_tier, flex_lp,
+               lp_24h, lp_7d, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+              """, (
+                  puuid, username, summoner_id, region,
+                  tier, rank, lp,
+                  flex_rank, flex_tier, flex_lp
+              ))
     c.execute("""
               UPDATE player
               SET username = ?,
@@ -36,9 +46,23 @@ def insert_player(summoner_id: str,
                   tier = ?,
                   rank = ?,
                   lp = ?,
+                  flex_rank = ?,
+                  flex_tier = ?,
+                  flex_lp = ?,
                   updated_at = CURRENT_TIMESTAMP
               WHERE puuid = ?
-              """, (username, summoner_id, region, tier, rank, lp, puuid))
+              """, (
+                  username,
+                  summoner_id,
+                  region,
+                  tier,
+                  rank,
+                  lp,
+                  flex_rank,
+                  flex_tier,
+                  flex_lp,
+                  puuid,
+              ))
     conn.commit()
     conn.close()
 
@@ -47,7 +71,8 @@ def update_player_global(puuid: str,
                          rank: str = None,
                          lp: int = None,
                          lp_change: int = None,
-                         username: str = None):
+                         username: str = None,
+                         flex: bool = False):
     """
     Met à jour les champs de la table player pour un joueur donné.
 
@@ -61,15 +86,26 @@ def update_player_global(puuid: str,
     if username is not None:
         updates.append("username = ?")
         params.append(username)
-    if tier is not None:
-        updates.append("tier = ?")
-        params.append(tier)
-    if rank is not None:
-        updates.append("rank = ?")
-        params.append(rank)
-    if lp is not None:
-        updates.append("lp = ?")
-        params.append(lp)
+    if flex:
+        if tier is not None:
+            updates.append("flex_tier = ?")
+            params.append(tier)
+        if rank is not None:
+            updates.append("flex_rank = ?")
+            params.append(rank)
+        if lp is not None:
+            updates.append("flex_lp = ?")
+            params.append(lp)
+    else:
+        if tier is not None:
+            updates.append("tier = ?")
+            params.append(tier)
+        if rank is not None:
+            updates.append("rank = ?")
+            params.append(rank)
+        if lp is not None:
+            updates.append("lp = ?")
+            params.append(lp)
 
     # Cas de cumul : si lp_change fourni, on fait « lp_24h = lp_24h + lp_change » et même pour lp_7d
     if lp_change is not None:
@@ -161,7 +197,8 @@ def get_player(puuid: str, guild_id: int):
               SELECT
                   p.summoner_id, p.puuid, p.username,
                   pg.guild_id, pg.channel_id, pg.last_match_id,
-                  p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d, p.region
+                  p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d, p.region,
+                  p.flex_tier, p.flex_rank, p.flex_lp
               FROM player p
                        JOIN player_guild pg ON p.puuid = pg.player_puuid
               WHERE p.puuid = ? AND pg.guild_id = ?
@@ -179,7 +216,8 @@ def get_all_players():
                   p.summoner_id, p.puuid, p.username,
                   pg.guild_id, pg.channel_id, pg.last_match_id,
                   p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d, p.region,
-                  g.flex_enabled
+                  g.flex_enabled,
+                  p.flex_tier, p.flex_rank, p.flex_lp
               FROM player p
                        JOIN player_guild pg ON p.puuid = pg.player_puuid
                        JOIN guild g ON pg.guild_id = g.guild_id
@@ -197,7 +235,8 @@ def get_player_by_username(username: str, guild_id: int = None):
                   SELECT
                       p.summoner_id, p.puuid, p.username,
                       pg.guild_id, pg.channel_id, pg.last_match_id,
-                      p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d, p.region
+                      p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d, p.region,
+                      p.flex_tier, p.flex_rank, p.flex_lp
                   FROM player p
                            JOIN player_guild pg ON p.puuid = pg.player_puuid
                   WHERE p.username = ? AND pg.guild_id = ?

@@ -349,8 +349,8 @@ async def check_username_changes():
     while True:
         players = await async_get_all_players()
         for player in players:
-            summoner_id, puuid, old_username, *rest = player
-            region = rest[-2]
+            (summoner_id, puuid, old_username, _guild_id, _chan_id, _last_match,
+             _tier, _rank, _lp, _lp24, _lp7, region, *_rest) = player
 
             region_code = normalize_region(region)
             routing = REGION_TO_ROUTING.get(region_code, "europe")
@@ -519,6 +519,9 @@ async def register(
     last_match_id = last_ids[0]
 
     data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, region)
+    flex_data = await asyncio.to_thread(
+        get_summoner_rank_details_by_puuid, puuid, region, True
+    )
     if not data:
         return await interaction.followup.send(
             f"Unable to retrieve rank for {username}.", ephemeral=True
@@ -531,6 +534,15 @@ async def register(
 
     lp = int(data["lp"])
 
+    if flex_data:
+        flex_rank_str = flex_data["tier"]
+        flex_tier_str = flex_data["rank"]
+        flex_lp = int(flex_data["lp"])
+    else:
+        flex_rank_str = None
+        flex_tier_str = None
+        flex_lp = None
+
     insert_player(
         summoner_id,
         puuid,
@@ -538,7 +550,10 @@ async def register(
         normalize_region(region),
         tier_str,
         rank_str,
-        lp
+        lp,
+        flex_tier_str,
+        flex_rank_str,
+        flex_lp
     )
 
     insert_player_guild(
@@ -620,7 +635,7 @@ async def rank(interaction: discord.Interaction, username: str):
         return
 
     puuid = player[1]
-    region = player[-1]
+    region = player[11]
     data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, region, flex)
     if not data:
         await interaction.followup.send("Unable to retrieve rank data.", ephemeral=True)
@@ -689,7 +704,7 @@ async def career(interaction: discord.Interaction, username: str):
         await interaction.followup.send("This player is not registered!", ephemeral=True)
         return
     puuid = player[1]
-    region = player[-1]
+    region = player[11]
     data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, region, flex)
     if not data:
         await interaction.followup.send("Error retrieving player rank information!", ephemeral=True)
@@ -768,9 +783,23 @@ async def check_ingame():
     while True:
         try:
             players = await async_get_all_players()
-            for summoner_id, puuid, username, guild_id, channel_id, *rest in players:
-                region = rest[-2]
-                flex = bool(rest[-1])
+            for (
+                summoner_id,
+                puuid,
+                username,
+                guild_id,
+                channel_id,
+                _last_match,
+                _tier,
+                _rank,
+                _lp,
+                _lp24,
+                _lp7,
+                region,
+                flex_enabled,
+                *_extra
+            ) in players:
+                flex = bool(flex_enabled)
                 channel = client.get_channel(int(channel_id))
                 if not channel:
                     continue
@@ -874,10 +903,13 @@ async def check_for_game_completion():
                     old_tier,
                     old_rank,
                     old_lp,
-                    *rest
+                    _lp24,
+                    _lp7,
+                    region,
+                    flex_enabled,
+                    *_extra
                 ) = row
-                region = rest[-2]
-                flex = bool(rest[-1])
+                flex = bool(flex_enabled)
 
                 if await async_is_in_game(puuid, region, flex):
                     continue
@@ -942,14 +974,14 @@ async def check_for_game_completion():
                     )
                     recent_match_lp_changes[key] = (lp_change, now)
 
-                    if not flex:
-                        update_player_global(
-                            puuid,
-                            tier=tier_str,
-                            rank=rank_str,
-                            lp=new_lp,
-                            lp_change=lp_change
-                        )
+                    update_player_global(
+                        puuid,
+                        tier=tier_str,
+                        rank=rank_str,
+                        lp=new_lp,
+                        lp_change=lp_change if not flex else None,
+                        flex=flex
+                    )
 
                 update_player_guild(
                     puuid,
