@@ -40,7 +40,8 @@ def test_check_for_game_completion_handles_missing_row(bot_module):
 def test_check_for_game_completion_skips_flex_updates(bot_module):
     row = (
         'sid', 'puuid2', 'User', 1, 10, 'm1',
-        'IV', 'GOLD', 50, 0, 0, 'euw1', 1
+        'IV', 'GOLD', 50, 0, 0, 'euw1', 1,
+        'IV', 'GOLD', 50
     )
     bot_module.players_in_game = {('puuid2', 1)}
     bot_module.players_in_game_messages = {('puuid2', 1): MagicMock()}
@@ -65,5 +66,12 @@ def test_check_for_game_completion_skips_flex_updates(bot_module):
         with pytest.raises(asyncio.CancelledError):
             asyncio.run(bot_module.check_for_game_completion())
 
-    upd_global.assert_not_called()
+    upd_global.assert_called_once_with(
+        'puuid2',
+        tier='IV',
+        rank='GOLD',
+        lp=50,
+        lp_change=None,
+        flex=True
+    )
     upd_lb.assert_not_called()
