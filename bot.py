@@ -78,6 +78,9 @@ MUSIC_REACTIONS = {
     "🎺": Path("music/ole.mp3"),
 }
 
+# Emoji used to request a spectate command
+SPECTATE_EMOJI = "📽️"
+
 
 def fetch_json(url: str, headers: dict | None = None,
                retries: int = 3, backoff: float = 1.0):
@@ -1122,9 +1125,77 @@ async def handle_music_reaction(payload: discord.RawReactionActionEvent):
             pass
 
 
+async def handle_spectate_reaction(payload: discord.RawReactionActionEvent):
+    """Send spectate command when reacting with the projector emoji."""
+    if str(payload.emoji) != SPECTATE_EMOJI:
+        return
+
+    guild = client.get_guild(payload.guild_id)
+    if not guild:
+        return
+
+    channel = guild.get_channel(payload.channel_id)
+    if not channel:
+        return
+
+    try:
+        message = await channel.fetch_message(payload.message_id)
+    except discord.DiscordException:
+        return
+
+    if message.author != client.user or not message.embeds:
+        return
+
+    title = message.embeds[0].title or ""
+    if "is playing a game" not in title:
+        return
+
+    player_key = None
+    for key, msg in players_in_game_messages.items():
+        if msg.id == message.id:
+            player_key = key
+            break
+    if not player_key:
+        return
+
+    puuid, guild_id = player_key
+    row = get_player(puuid, guild_id)
+    if not row:
+        return
+    region = row[11]
+    username = row[2]
+
+    region_code = normalize_region(region)
+    url = (
+        f"https://{region_code}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
+    )
+    headers = {"X-Riot-Token": RIOT_API_KEY}
+    data = await async_fetch_json(url, headers=headers)
+    if not data:
+        return
+
+    encryption_key = data.get("observers", {}).get("encryptionKey")
+    game_id = data.get("gameId")
+    platform_id = data.get("platformId")
+    if not encryption_key or not game_id or not platform_id:
+        return
+
+    spectate_server = f"spectator.{region_code}.lol.riotgames.com:80"
+    command = (
+        f"LeagueClient.exe --spectator {spectate_server} {encryption_key} {game_id} {platform_id}"
+    )
+    try:
+        await channel.send(
+            f"Use this command to spectate {username}'s game:\n```{command}```"
+        )
+    except discord.DiscordException:
+        return
+
+
 @client.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     await handle_music_reaction(payload)
+    await handle_spectate_reaction(payload)
 
 @client.event
 async def on_ready():
