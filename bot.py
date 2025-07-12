@@ -53,7 +53,7 @@ client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 leaderboard.setup_tree(tree)
 
-DISCORD_LOG_CHANNEL_ID = 1379139184635154442
+DISCORD_LOG_CHANNEL_ID = 1392503284190679203
 discord_handler = DiscordLogHandler(client, DISCORD_LOG_CHANNEL_ID)
 discord_handler.setLevel(logging.INFO)
 formatter = logging.Formatter(
