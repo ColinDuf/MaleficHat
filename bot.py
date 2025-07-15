@@ -105,7 +105,7 @@ async def async_fetch_json(url: str, headers: dict | None = None,
                         return None
                     resp.raise_for_status()
                     return await resp.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        except aiohttp.ClientError as e:
             if attempt == retries:
                 logging.error(f"Error fetching {url}: {e}")
                 return None
