@@ -17,8 +17,7 @@ def bot_module():
     module.discord_handler.emit = lambda *a, **k: None
     return module
 
-@pytest.mark.parametrize("title", ["Victory for Player", "Player is playing a game!"])
-def test_handle_music_reaction(bot_module, title):
+def test_handle_music_reaction(bot_module):
     payload = SimpleNamespace(
         emoji='🎉',
         guild_id=1,
@@ -30,11 +29,11 @@ def test_handle_music_reaction(bot_module, title):
     member = MagicMock(bot=False)
     member.voice = MagicMock(channel=MagicMock())
     guild = MagicMock()
-    guild.fetch_member = AsyncMock(return_value=member)
+    guild.get_member.return_value = member
     guild.get_channel.return_value = MagicMock()
     guild.get_channel.return_value.fetch_message = AsyncMock(return_value=MagicMock(
         author=bot_module.client.user,
-        embeds=[MagicMock(title=title)]
+        embeds=[MagicMock(title='Victory for Player')]
     ))
     guild.voice_client = None
 

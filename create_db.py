@@ -12,8 +12,7 @@ def create_db():
     c.execute("""
         CREATE TABLE IF NOT EXISTS guild (
             guild_id INTEGER PRIMARY KEY,
-            leaderboard_channel_id INTEGER,
-            flex_enabled INTEGER DEFAULT 0
+            leaderboard_channel_id INTEGER
         );
         """)
 
@@ -22,13 +21,9 @@ def create_db():
             username TEXT NOT NULL,
             puuid TEXT PRIMARY KEY,
             summoner_id TEXT NOT NULL,
-            region TEXT NOT NULL DEFAULT 'euw1',
             rank TEXT,
             tier TEXT,
             lp INTEGER,
-            flex_rank TEXT,
-            flex_tier TEXT,
-            flex_lp INTEGER,
             lp_24h INTEGER,
             lp_7d INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
