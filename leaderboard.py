@@ -38,7 +38,7 @@ async def leaderboard_cmd(
     guild_id = guild.id
 
     # 2) Enregistrement du salon comme channel de leaderboard
-    insert_guild(guild_id, new_channel.id)
+    insert_guild(guild_id, new_channel.id, 0)
 
     lb_id = get_leaderboard_by_guild(guild_id)
     if lb_id is None:

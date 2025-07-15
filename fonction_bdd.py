@@ -10,8 +10,7 @@ def get_connection():
     return conn
 
 
-def insert_player(summoner_id: str,
-                  puuid: str,
+def insert_player(puuid: str,
                   username: str,
                   tier: str,
                   rank: str,
@@ -22,21 +21,26 @@ def insert_player(summoner_id: str,
     conn = get_connection()
     c = conn.cursor()
     # Insert initial si absent
-    c.execute("""
-              INSERT OR IGNORE INTO player
-              (puuid, username, summoner_id, tier, rank, lp, lp_24h, lp_7d, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-              """, (puuid, username, summoner_id, tier, rank, lp))
-    c.execute("""
-              UPDATE player
-              SET username = ?,
-                  summoner_id = ?,
-                  tier = ?,
-                  rank = ?,
-                  lp = ?,
-                  updated_at = CURRENT_TIMESTAMP
-              WHERE puuid = ?
-              """, (username, summoner_id, tier, rank, lp, puuid))
+    c.execute(
+        """
+        INSERT OR IGNORE INTO player
+          (puuid, username, tier, rank, lp, lp_24h, lp_7d, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """,
+        (puuid, username, tier, rank, lp),
+    )
+    c.execute(
+        """
+        UPDATE player
+        SET username = ?,
+            tier = ?,
+            rank = ?,
+            lp = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE puuid = ?
+        """,
+        (username, tier, rank, lp, puuid),
+    )
     conn.commit()
     conn.close()
 
@@ -155,15 +159,18 @@ def get_player(puuid: str, guild_id: int):
     """Récupère un joueur pour une guilde via jointure."""
     conn = get_connection()
     c = conn.cursor()
-    c.execute("""
-              SELECT
-                  p.summoner_id, p.puuid, p.username,
-                  pg.guild_id, pg.channel_id, pg.last_match_id,
-                  p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
-              FROM player p
-                       JOIN player_guild pg ON p.puuid = pg.player_puuid
-              WHERE p.puuid = ? AND pg.guild_id = ?
-              """, (puuid, guild_id))
+    c.execute(
+        """
+        SELECT
+            p.puuid, p.username,
+            pg.guild_id, pg.channel_id, pg.last_match_id,
+            p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
+        FROM player p
+            JOIN player_guild pg ON p.puuid = pg.player_puuid
+        WHERE p.puuid = ? AND pg.guild_id = ?
+        """,
+        (puuid, guild_id),
+    )
     row = c.fetchone()
     conn.close()
     return row
@@ -172,14 +179,16 @@ def get_all_players():
     """Liste tous les joueurs et leurs associations."""
     conn = get_connection()
     c = conn.cursor()
-    c.execute("""
-              SELECT
-                  p.summoner_id, p.puuid, p.username,
-                  pg.guild_id, pg.channel_id, pg.last_match_id,
-                  p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
-              FROM player p
-                       JOIN player_guild pg ON p.puuid = pg.player_puuid
-              """)
+    c.execute(
+        """
+        SELECT
+            p.puuid, p.username,
+            pg.guild_id, pg.channel_id, pg.last_match_id,
+            p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
+        FROM player p
+            JOIN player_guild pg ON p.puuid = pg.player_puuid
+        """
+    )
     rows = c.fetchall()
     conn.close()
     return rows
@@ -189,15 +198,18 @@ def get_player_by_username(username: str, guild_id: int = None):
     conn = get_connection()
     c = conn.cursor()
     if guild_id is not None:
-        c.execute("""
-                  SELECT
-                      p.summoner_id, p.puuid, p.username,
-                      pg.guild_id, pg.channel_id, pg.last_match_id,
-                      p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
-                  FROM player p
-                           JOIN player_guild pg ON p.puuid = pg.player_puuid
-                  WHERE p.username = ? AND pg.guild_id = ?
-                  """, (username, guild_id))
+        c.execute(
+            """
+            SELECT
+                p.puuid, p.username,
+                pg.guild_id, pg.channel_id, pg.last_match_id,
+                p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
+            FROM player p
+                JOIN player_guild pg ON p.puuid = pg.player_puuid
+            WHERE p.username = ? AND pg.guild_id = ?
+            """,
+            (username, guild_id),
+        )
         result = c.fetchone()
     else:
         c.execute("SELECT puuid, username FROM player WHERE username = ?", (username,))
@@ -226,22 +238,36 @@ async def username_autocomplete(interaction: Interaction, current: str):
 
 # ----- Opérations sur la table guild -----
 
-def insert_guild(guild_id: int, leaderboard_channel_id: int):
-    """Ajoute ou met à jour le channel de leaderboard d'une guilde."""
+def insert_guild(guild_id: int, leaderboard_channel_id: int, flex_enabled: int = 0):
+    """Insert or update guild configuration."""
     conn = get_connection()
     c = conn.cursor()
     c.execute(
-        "INSERT OR REPLACE INTO guild (guild_id, leaderboard_channel_id) VALUES (?, ?)",
-        (guild_id, leaderboard_channel_id)
+        "INSERT OR REPLACE INTO guild (guild_id, leaderboard_channel_id, flex_enabled) VALUES (?, ?, ?)",
+        (guild_id, leaderboard_channel_id, flex_enabled)
+    )
+    conn.commit()
+    conn.close()
+
+def set_guild_flex_mode(guild_id: int, enabled: bool) -> None:
+    """Toggle flex mode for a guild."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE guild SET flex_enabled = ? WHERE guild_id = ?",
+        (1 if enabled else 0, guild_id)
     )
     conn.commit()
     conn.close()
 
 def get_guild(guild_id: int):
-    """Récupère les infos d'une guilde si existante."""
+    """Retrieve guild info if present."""
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT guild_id, leaderboard_channel_id FROM guild WHERE guild_id = ?", (guild_id,))
+    c.execute(
+        "SELECT guild_id, leaderboard_channel_id, flex_enabled FROM guild WHERE guild_id = ?",
+        (guild_id,)
+    )
     result = c.fetchone()
     conn.close()
     return result

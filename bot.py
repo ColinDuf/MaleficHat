@@ -9,12 +9,23 @@ from dotenv import load_dotenv
 from create_db import create_db
 from leaderboard_tasks import reset_lp_scheduler
 import leaderboard
-from fonction_bdd import (insert_player, get_player_by_username, delete_player,
-                          username_autocomplete, get_player, get_all_players,
-                          get_guild, insert_guild, insert_player_guild,
-                          update_player_guild, update_player_global,
-                          get_leaderboard_by_guild, delete_leaderboard_member,
-                          count_players)
+from fonction_bdd import (
+    insert_player,
+    get_player_by_username,
+    delete_player,
+    username_autocomplete,
+    get_player,
+    get_all_players,
+    get_guild,
+    insert_guild,
+    insert_player_guild,
+    update_player_guild,
+    update_player_global,
+    get_leaderboard_by_guild,
+    delete_leaderboard_member,
+    count_players,
+    set_guild_flex_mode,
+)
 import requests
 import tracemalloc
 from pathlib import Path
@@ -105,7 +116,7 @@ async def async_fetch_json(url: str, headers: dict | None = None,
                         return None
                     resp.raise_for_status()
                     return await resp.json()
-        except aiohttp.ClientError as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             if attempt == retries:
                 logging.error(f"Error fetching {url}: {e}")
                 return None
@@ -120,33 +131,6 @@ def get_puuid(username, hashtag):
     headers = {"X-Riot-Token": RIOT_API_KEY}
     data = fetch_json(url, headers=headers)
     return data.get('puuid') if data else None
-
-def get_summoner_id(puuid):
-    url = f"https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}"
-    headers = {"X-Riot-Token": RIOT_API_KEY}
-    data = fetch_json(url, headers=headers)
-    return data.get('id') if data else None
-
-def get_summoner_rank_details(summoner_id: str):
-    """Return detailed solo/duo rank info for a summoner ID."""
-    url = (
-        "https://euw1.api.riotgames.com/lol/league/v4/entries/by-summoner/"
-        f"{summoner_id}"
-    )
-    headers = {"X-Riot-Token": RIOT_API_KEY}
-    data = fetch_json(url, headers=headers)
-    if isinstance(data, list):
-        for entry in data:
-            if entry.get("queueType") == "RANKED_SOLO_5x5":
-                return {
-                    "tier": entry.get("tier"),
-                    "rank": entry.get("rank"),
-                    "lp": entry.get("leaguePoints"),
-                    "wins": entry.get("wins"),
-                    "losses": entry.get("losses"),
-                }
-    return None
-
 
 def get_summoner_rank_details_by_puuid(puuid: str):
     """Return detailed solo/duo rank info using the PUUID directly."""
@@ -167,12 +151,6 @@ def get_summoner_rank_details_by_puuid(puuid: str):
                     "losses": entry.get("losses"),
                 }
     return None
-
-def get_summoner_rank(summoner_id):
-    details = get_summoner_rank_details(summoner_id)
-    if details:
-        return f"{details['tier']} {details['rank']} {details['lp']} LP"
-    return "Unknown"
 
 def get_last_match(puuid, nb_last_match):
     url = f"https://europe.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type=ranked&count={nb_last_match}"
@@ -284,7 +262,7 @@ async def check_username_changes():
     while True:
         players = await async_get_all_players()
         for player in players:
-            summoner_id, puuid, old_username, *_ = player
+            puuid, old_username, *_ = player
 
             url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
             headers = {"X-Riot-Token": RIOT_API_KEY}
@@ -413,17 +391,12 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
         return await interaction.followup.send(
             f"Error fetching PUUID for {username}.", ephemeral=True
         )
-    summoner_id = await asyncio.to_thread(get_summoner_id, puuid)
-    if not summoner_id:
-        return await interaction.followup.send(
-            f"Error fetching Summoner ID for {username}.", ephemeral=True
-        )
 
     guild_id = interaction.guild.id
     channel_id = interaction.channel.id
 
     if not get_guild(guild_id):
-        insert_guild(guild_id, None)
+        insert_guild(guild_id, None, 0)
 
     if get_player(puuid, guild_id):
         return await interaction.followup.send(
@@ -452,12 +425,11 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
     lp = int(data["lp"])
 
     insert_player(
-        summoner_id,
         puuid,
         username,
         tier_str,
         rank_str,
-        lp
+        lp,
     )
 
     insert_player_guild(
@@ -497,7 +469,7 @@ async def unregister(interaction: discord.Interaction, username: str):
             f"❌ {username} is not registered on this server.",
             ephemeral=True
         )
-    puuid = player[1]
+    puuid = player[0]
 
     delete_player(puuid, guild_id)
 
@@ -517,6 +489,22 @@ async def unregister(interaction: discord.Interaction, username: str):
     return None
 
 
+@tree.command(name="flex", description="Enable or disable Flex queue alerts")
+async def flex(interaction: discord.Interaction, mode: str):
+    guild_id = interaction.guild.id
+    row = get_guild(guild_id)
+
+    enable = mode.lower() == "on"
+
+    if row is None:
+        insert_guild(guild_id, None, 1 if enable else 0)
+    else:
+        set_guild_flex_mode(guild_id, enable)
+
+    await interaction.response.send_message("Flex mode updated.", ephemeral=True)
+    return None
+
+
 @tree.command(name="rank", description="Display a player's current Solo/Duo rank")
 @app_commands.autocomplete(username=username_autocomplete)
 async def rank(interaction: discord.Interaction, username: str):
@@ -530,7 +518,7 @@ async def rank(interaction: discord.Interaction, username: str):
         await interaction.followup.send("This player is not registered here.", ephemeral=True)
         return
 
-    puuid = player[1]
+    puuid = player[0]
     data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid)
     if not data:
         await interaction.followup.send("Unable to retrieve rank data.", ephemeral=True)
@@ -596,7 +584,7 @@ async def career(interaction: discord.Interaction, username: str):
     if not player:
         await interaction.followup.send("This player is not registered!", ephemeral=True)
         return
-    puuid = player[1]
+    puuid = player[0]
     data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid)
     if not data:
         await interaction.followup.send("Error retrieving player rank information!", ephemeral=True)
@@ -653,7 +641,7 @@ async def check_ingame():
     while True:
         try:
             players = await async_get_all_players()
-            for summoner_id, puuid, username, guild_id, channel_id, *_ in players:
+            for puuid, username, guild_id, channel_id, *_ in players:
                 channel = client.get_channel(int(channel_id))
                 if not channel:
                     continue
@@ -732,7 +720,7 @@ async def check_for_game_completion():
             }
 
             players = await async_get_all_players()
-            player_map = {(row[1], row[3]): row for row in players}
+            player_map = {(row[0], row[2]): row for row in players}
 
             for player_key in list(players_in_game):
                 row = player_map.get(player_key)
@@ -742,7 +730,6 @@ async def check_for_game_completion():
                     continue
 
                 (
-                    summoner_id,
                     puuid,
                     username,
                     guild_id,
@@ -840,7 +827,8 @@ async def check_for_game_completion():
                         assists,
                         champ_img,
                         lp_change,
-                        damage
+                        damage,
+                        False
                     )
 
                 guild_data = get_guild(guild_id)  # (guild_id, leaderboard_channel_id)
@@ -861,12 +849,17 @@ async def check_for_game_completion():
 
 
 async def send_match_result_embed(channel, username, result, kills, deaths, assists,
-                                  champion_image, lp_change, damage):
-    game_result = "Victory" if result == ':green_circle:' else "Defeat"
+                                  champion_image, lp_change, damage, early_surrender: bool = False):
+    if early_surrender:
+        game_result = "Early Surrender"
+        color = discord.Color.orange()
+    else:
+        game_result = "Victory" if result == ':green_circle:' else "Defeat"
+        color = discord.Color.green() if result == ':green_circle:' else discord.Color.red()
     lp_text = "LP Win" if lp_change > 0 else "LP Lost"
     embed = discord.Embed(
         title=f"{game_result} for {username}",
-        color=discord.Color.green() if result == ':green_circle:' else discord.Color.red()
+        color=color
     )
     embed.add_field(name="K/D/A", value=f"{kills}/{deaths}/{assists}", inline=True)
     embed.add_field(name="Damage", value=f"{damage}", inline=True)
@@ -903,11 +896,8 @@ async def handle_music_reaction(payload: discord.RawReactionActionEvent):
     if not any(keyword in title for keyword in ("Victory", "Defeat", "is playing a game")):
         return
 
-    try:
-        member = await guild.fetch_member(payload.user_id)
-        if member.bot or not member.voice or not member.voice.channel:
-            return
-    except (discord.NotFound, discord.DiscordException):
+    member = guild.get_member(payload.user_id)
+    if member is None or member.bot or not member.voice or not member.voice.channel:
         return
 
     audio_path = MUSIC_REACTIONS[emoji]
@@ -935,9 +925,59 @@ async def handle_music_reaction(payload: discord.RawReactionActionEvent):
             pass
 
 
+async def handle_spectate_reaction(payload: discord.RawReactionActionEvent):
+    """Send a spectate command when reacting with the projector emoji."""
+    if str(payload.emoji) != "📽️":
+        return
+
+    guild = client.get_guild(payload.guild_id)
+    if not guild:
+        return
+
+    channel = guild.get_channel(payload.channel_id)
+    if not channel:
+        return
+
+    try:
+        message = await channel.fetch_message(payload.message_id)
+    except discord.DiscordException:
+        return
+
+    if message.author != client.user or not message.embeds:
+        return
+
+    title = message.embeds[0].title or ""
+    if "is playing a game" not in title:
+        return
+
+    puuid = None
+    for (p, g), msg in players_in_game_messages.items():
+        if msg.id == message.id:
+            puuid = p
+            break
+    if not puuid:
+        return
+
+    player = get_player(puuid, payload.guild_id)
+    if not player:
+        return
+
+    region = "euw1"
+
+    data = await async_fetch_json(
+        f"https://{region}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}",
+        headers={"X-Riot-Token": RIOT_API_KEY},
+    )
+    if not data:
+        return
+
+    await channel.send("Spectate information available.")
+
+
 @client.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     await handle_music_reaction(payload)
+    await handle_spectate_reaction(payload)
 
 @client.event
 async def on_ready():
