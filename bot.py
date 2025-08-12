@@ -132,8 +132,8 @@ def get_puuid(username, hashtag):
     data = fetch_json(url, headers=headers)
     return data.get('puuid') if data else None
 
-def get_summoner_rank_details_by_puuid(puuid: str):
-    """Return detailed solo/duo rank info using the PUUID directly."""
+def get_summoner_rank_details_by_puuid(puuid: str, queue: str = "RANKED_SOLO_5x5"):
+    """Return detailed rank info for a specific queue using the PUUID directly."""
     url = (
         "https://euw1.api.riotgames.com/lol/league/v4/entries/by-puuid/"
         f"{puuid}"
@@ -142,7 +142,7 @@ def get_summoner_rank_details_by_puuid(puuid: str):
     data = fetch_json(url, headers=headers)
     if isinstance(data, list):
         for entry in data:
-            if entry.get("queueType") == "RANKED_SOLO_5x5":
+            if entry.get("queueType") == queue:
                 return {
                     "tier": entry.get("tier"),
                     "rank": entry.get("rank"),
@@ -328,10 +328,9 @@ def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
         return 0
 
 
-async def is_in_game(puuid: str) -> int | None:
+async def is_in_game(puuid: str, flex: bool = False) -> int | None:
     """
-    Si le joueur est en ranked solo/duo (queue 420), renvoie son championId (int).
-    Sinon renvoie None.
+    Retourne le championId si le joueur est en ranked (solo/duo ou flex).
     """
     url = f"https://euw1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
@@ -339,7 +338,8 @@ async def is_in_game(puuid: str) -> int | None:
     data = await async_fetch_json(url, headers=headers)
     if not data:
         return None
-    if data.get("gameQueueConfigId") != 420:
+    target_queue = 440 if flex else 420
+    if data.get("gameQueueConfigId") != target_queue:
         return None
     for participant in data.get("participants", []):
         if participant.get("puuid") == puuid:
@@ -353,8 +353,8 @@ async def is_in_game(puuid: str) -> int | None:
 async def async_get_all_players():
     return await asyncio.to_thread(get_all_players)
 
-async def async_is_in_game(puuid):
-    return await is_in_game(puuid)
+async def async_is_in_game(puuid, flex: bool = False):
+    return await is_in_game(puuid, flex)
 
 async def async_get_last_match(puuid, nb_last_match):
     return await asyncio.to_thread(get_last_match, puuid, nb_last_match)
@@ -411,18 +411,20 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
         )
     last_match_id = last_ids[0]
 
-    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid)
-    if not data:
+    solo_data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, "RANKED_SOLO_5x5")
+    flex_data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, "RANKED_FLEX_SR")
+    if not solo_data:
         return await interaction.followup.send(
             f"Unable to retrieve rank for {username}.", ephemeral=True
         )
 
-    # API returns `tier` (e.g. GOLD) and `rank` (e.g. IV). We store
-    # division first then rank category to match database order.
-    rank_str = data["tier"]
-    tier_str = data["rank"]
+    rank_str = solo_data["tier"]
+    tier_str = solo_data["rank"]
+    lp = int(solo_data["lp"])
 
-    lp = int(data["lp"])
+    flex_rank_str = flex_data["tier"] if flex_data else None
+    flex_tier_str = flex_data["rank"] if flex_data else None
+    flex_lp = int(flex_data["lp"]) if flex_data else None
 
     insert_player(
         puuid,
@@ -430,6 +432,9 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
         tier_str,
         rank_str,
         lp,
+        flex_tier_str,
+        flex_rank_str,
+        flex_lp,
     )
 
     insert_player_guild(
@@ -641,12 +646,19 @@ async def check_ingame():
     while True:
         try:
             players = await async_get_all_players()
+            guild_flex: dict[int, bool] = {}
             for puuid, username, guild_id, channel_id, *_ in players:
                 channel = client.get_channel(int(channel_id))
                 if not channel:
                     continue
 
-                champion_id = await is_in_game(puuid)
+                flex_mode = guild_flex.get(guild_id)
+                if flex_mode is None:
+                    guild_row = get_guild(guild_id)
+                    flex_mode = bool(guild_row[2]) if guild_row else False
+                    guild_flex[guild_id] = flex_mode
+
+                champion_id = await is_in_game(puuid, flex_mode)
 
                 player_key = (puuid, guild_id)
 
@@ -735,13 +747,19 @@ async def check_for_game_completion():
                     guild_id,
                     alert_channel_id,
                     last_match_id,
-                    old_tier,
-                    old_rank,
-                    old_lp,
-                    *_
+                    solo_tier,
+                    solo_rank,
+                    solo_lp,
+                    _lp24h,
+                    _lp7d,
+                    flex_tier,
+                    flex_rank,
+                    flex_lp,
                 ) = row
 
-                if await async_is_in_game(puuid):
+                guild_row = get_guild(guild_id)
+                flex_mode = bool(guild_row[2]) if guild_row else False
+                if await async_is_in_game(puuid, flex_mode):
                     continue
 
                 last_matches = await async_get_last_match(puuid, 1)
@@ -756,6 +774,24 @@ async def check_for_game_completion():
                     continue
                 result, champion, kills, deaths, assists, game_duration, champ_img, damage = details
 
+                match = await async_fetch_json(
+                    f"https://europe.api.riotgames.com/lol/match/v5/matches/{new_match_id}",
+                    headers={"X-Riot-Token": RIOT_API_KEY}
+                )
+                queue_id = match.get("info", {}).get("queueId") if match else None
+                if queue_id not in (420, 440):
+                    continue
+                is_flex_match = queue_id == 440
+                is_early_surrender = False
+                if match and match.get("info"):
+                    participants = match["info"].get("participants", [])
+                    is_early_surrender = any(p.get("gameEndedInEarlySurrender") for p in participants)
+
+                if is_flex_match:
+                    old_tier, old_rank, old_lp = flex_tier, flex_rank, flex_lp
+                else:
+                    old_tier, old_rank, old_lp = solo_tier, solo_rank, solo_lp
+
                 key = (puuid, new_match_id)
                 if key in recent_match_lp_changes:
                     lp_change = recent_match_lp_changes[key][0]
@@ -763,8 +799,9 @@ async def check_for_game_completion():
                     rank_str = old_rank
                     new_lp = old_lp + lp_change
                 else:
+                    queue_str = "RANKED_FLEX_SR" if is_flex_match else "RANKED_SOLO_5x5"
                     new_details = await asyncio.to_thread(
-                        get_summoner_rank_details_by_puuid, puuid
+                        get_summoner_rank_details_by_puuid, puuid, queue_str
                     )
                     if not new_details:
                         tier_str = old_tier
@@ -794,13 +831,22 @@ async def check_for_game_completion():
                     )
                     recent_match_lp_changes[key] = (lp_change, now)
 
-                    update_player_global(
-                        puuid,
-                        tier=tier_str,
-                        rank=rank_str,
-                        lp=new_lp,
-                        lp_change=lp_change
-                    )
+                    if is_flex_match:
+                        update_player_global(
+                            puuid,
+                            flex_tier=tier_str,
+                            flex_rank=rank_str,
+                            flex_lp=new_lp,
+                            lp_change=lp_change
+                        )
+                    else:
+                        update_player_global(
+                            puuid,
+                            tier=tier_str,
+                            rank=rank_str,
+                            lp=new_lp,
+                            lp_change=lp_change
+                        )
 
                 update_player_guild(
                     puuid,
@@ -828,10 +874,10 @@ async def check_for_game_completion():
                         champ_img,
                         lp_change,
                         damage,
-                        False
+                        is_early_surrender
                     )
 
-                guild_data = get_guild(guild_id)  # (guild_id, leaderboard_channel_id)
+                guild_data = guild_row  # (guild_id, leaderboard_channel_id, flex_enabled)
                 lb_channel_id = guild_data[1] if guild_data else None
                 if lb_channel_id:
                     await leaderboard.update_leaderboard_message(lb_channel_id, client, guild_id)
@@ -849,8 +895,8 @@ async def check_for_game_completion():
 
 
 async def send_match_result_embed(channel, username, result, kills, deaths, assists,
-                                  champion_image, lp_change, damage, early_surrender: bool = False):
-    if early_surrender:
+                                  champion_image, lp_change, damage, is_early_surrender: bool = False):
+    if is_early_surrender:
         game_result = "Early Surrender"
         color = discord.Color.orange()
     else:
