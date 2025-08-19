@@ -1,7 +1,7 @@
 import sqlite3
 from discord import app_commands, Interaction
 
-DB_PATH = "database.db"
+DB_PATH = "Backend/database.db"
 
 def get_connection():
     """Retourne une connexion SQLite avec les FK activées."""
@@ -259,14 +259,43 @@ async def username_autocomplete(interaction: Interaction, current: str):
 
 # ----- Opérations sur la table guild -----
 
-def insert_guild(guild_id: int, leaderboard_channel_id: int, flex_enabled: int = 0):
-    """Insert or update guild configuration."""
+def insert_guild(guild_id: int,
+                 leaderboard_channel_id: int | None,
+                 flex_enabled: int | None = 0):
+    """Insert or update guild configuration.
+
+    Uses ``INSERT OR IGNORE`` followed by an ``UPDATE`` so that existing
+    rows aren't replaced, which previously could violate foreign key
+    constraints for related tables.
+    """
     conn = get_connection()
     c = conn.cursor()
+
+    # Ensure a row exists for this guild
     c.execute(
-        "INSERT OR REPLACE INTO guild (guild_id, leaderboard_channel_id, flex_enabled) VALUES (?, ?, ?)",
-        (guild_id, leaderboard_channel_id, flex_enabled)
+        """
+        INSERT OR IGNORE INTO guild (guild_id, leaderboard_channel_id, flex_enabled)
+        VALUES (?, ?, COALESCE(?, 0))
+        """,
+        (guild_id, leaderboard_channel_id, flex_enabled),
     )
+
+    # Update provided fields without clobbering existing data
+    updates = []
+    params: list[object] = []
+    if leaderboard_channel_id is not None:
+        updates.append("leaderboard_channel_id = ?")
+        params.append(leaderboard_channel_id)
+    if flex_enabled is not None:
+        updates.append("flex_enabled = ?")
+        params.append(flex_enabled)
+    if updates:
+        params.append(guild_id)
+        c.execute(
+            f"UPDATE guild SET {', '.join(updates)} WHERE guild_id = ?",
+            params,
+        )
+
     conn.commit()
     conn.close()
 

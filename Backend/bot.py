@@ -329,20 +329,34 @@ def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
 
 
 async def is_in_game(puuid: str, flex: bool = False) -> int | None:
+    """Retourne le championId si le joueur est actuellement en ranked.
+
+    L'API spectator peut fournir des parties Flex (queue 440) ou Solo/Duo
+    (queue 420). Certains comptes sont identifiés par ``puuid`` ou par
+    ``summonerId`` selon l'endpoint. Pour couvrir tous les cas, on vérifie
+    la présence des deux champs et on accepte les deux codes de file.
+
+    Le paramètre ``flex`` est conservé pour compatibilité mais n'influence
+    plus la détection.
     """
-    Retourne le championId si le joueur est en ranked (solo/duo ou flex).
-    """
-    url = f"https://euw1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"
+
+    url = (
+        "https://euw1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/"
+        f"{puuid}"
+    )
     headers = {"X-Riot-Token": RIOT_API_KEY}
 
     data = await async_fetch_json(url, headers=headers)
     if not data:
         return None
-    target_queue = 440 if flex else 420
-    if data.get("gameQueueConfigId") != target_queue:
+
+    queue_id = data.get("gameQueueConfigId")
+    if queue_id not in (420, 440):
         return None
+
     for participant in data.get("participants", []):
-        if participant.get("puuid") == puuid:
+        pid = participant.get("puuid") or participant.get("summonerId")
+        if pid == puuid:
             return participant.get("championId")
     return None
 
@@ -495,18 +509,26 @@ async def unregister(interaction: discord.Interaction, username: str):
 
 
 @tree.command(name="flex", description="Enable or disable Flex queue alerts")
+@app_commands.describe(mode="Choose 'enable' to track Flex queue games or 'disable' to monitor Solo queue")
+@app_commands.choices(mode=[
+    app_commands.Choice(name="enable", value="enable"),
+    app_commands.Choice(name="disable", value="disable"),
+])
 async def flex(interaction: discord.Interaction, mode: str):
     guild_id = interaction.guild.id
     row = get_guild(guild_id)
 
-    enable = mode.lower() == "on"
+    enable = mode.lower() == "enable"
 
     if row is None:
         insert_guild(guild_id, None, 1 if enable else 0)
     else:
         set_guild_flex_mode(guild_id, enable)
 
-    await interaction.response.send_message("Flex mode updated.", ephemeral=True)
+    await interaction.response.send_message(
+        f"Flex mode {'enabled' if enable else 'disabled'}.",
+        ephemeral=True
+    )
     return None
 
 

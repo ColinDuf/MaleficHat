@@ -161,10 +161,17 @@ async def update_leaderboard_message(channel_id: int, bot: discord.Client, guild
         'GRANDMASTER', 'CHALLENGER'
     ]
     tier_order = ['IV', 'III', 'II', 'I']  # I = meilleur
+
+    def rank_idx(val: str | None) -> int:
+        return rank_order.index(val) if val in rank_order else -1
+
+    def tier_idx(val: str | None) -> int:
+        return tier_order.index(val) if val in tier_order else -1
+
     rows.sort(key=lambda x: (
-        -rank_order.index(x[2]),     # meilleur rang en premier
-        -tier_order.index(x[1]),     # meilleure division en premier
-        -x[3]                        # plus de LP courant en premier
+        -rank_idx(x[2]),    # meilleur rang en premier, "Unranked" en dernier
+        -tier_idx(x[1]),    # meilleure division en premier
+        -x[3]                      # plus de LP courant en premier
     ))
 
     # 2) Prépare header et séparateur
