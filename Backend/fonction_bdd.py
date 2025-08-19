@@ -1,7 +1,7 @@
 import sqlite3
 from discord import app_commands, Interaction
 
-DB_PATH = "database.db"
+DB_PATH = "Backend/database.db"
 
 def get_connection():
     """Retourne une connexion SQLite avec les FK activées."""
@@ -14,7 +14,10 @@ def insert_player(puuid: str,
                   username: str,
                   tier: str,
                   rank: str,
-                  lp: int):
+                  lp: int,
+                  flex_tier: str = None,
+                  flex_rank: str = None,
+                  flex_lp: int = None):
     """
     Insert or update des données globales du joueur.
     """
@@ -24,10 +27,10 @@ def insert_player(puuid: str,
     c.execute(
         """
         INSERT OR IGNORE INTO player
-          (puuid, username, tier, rank, lp, lp_24h, lp_7d, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          (puuid, username, tier, rank, lp, flex_tier, flex_rank, flex_lp, lp_24h, lp_7d, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
-        (puuid, username, tier, rank, lp),
+        (puuid, username, tier, rank, lp, flex_tier, flex_rank, flex_lp),
     )
     c.execute(
         """
@@ -36,10 +39,13 @@ def insert_player(puuid: str,
             tier = ?,
             rank = ?,
             lp = ?,
+            flex_tier = ?,
+            flex_rank = ?,
+            flex_lp = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE puuid = ?
         """,
-        (username, tier, rank, lp, puuid),
+        (username, tier, rank, lp, flex_tier, flex_rank, flex_lp, puuid),
     )
     conn.commit()
     conn.close()
@@ -49,7 +55,10 @@ def update_player_global(puuid: str,
                          rank: str = None,
                          lp: int = None,
                          lp_change: int = None,
-                         username: str = None):
+                         username: str = None,
+                         flex_tier: str = None,
+                         flex_rank: str = None,
+                         flex_lp: int = None):
     """
     Met à jour les champs de la table player pour un joueur donné.
 
@@ -72,6 +81,15 @@ def update_player_global(puuid: str,
     if lp is not None:
         updates.append("lp = ?")
         params.append(lp)
+    if flex_tier is not None:
+        updates.append("flex_tier = ?")
+        params.append(flex_tier)
+    if flex_rank is not None:
+        updates.append("flex_rank = ?")
+        params.append(flex_rank)
+    if flex_lp is not None:
+        updates.append("flex_lp = ?")
+        params.append(flex_lp)
 
     # Cas de cumul : si lp_change fourni, on fait « lp_24h = lp_24h + lp_change » et même pour lp_7d
     if lp_change is not None:
@@ -164,7 +182,8 @@ def get_player(puuid: str, guild_id: int):
         SELECT
             p.puuid, p.username,
             pg.guild_id, pg.channel_id, pg.last_match_id,
-            p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
+            p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d,
+            p.flex_tier, p.flex_rank, p.flex_lp
         FROM player p
             JOIN player_guild pg ON p.puuid = pg.player_puuid
         WHERE p.puuid = ? AND pg.guild_id = ?
@@ -184,7 +203,8 @@ def get_all_players():
         SELECT
             p.puuid, p.username,
             pg.guild_id, pg.channel_id, pg.last_match_id,
-            p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
+            p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d,
+            p.flex_tier, p.flex_rank, p.flex_lp
         FROM player p
             JOIN player_guild pg ON p.puuid = pg.player_puuid
         """
@@ -203,7 +223,8 @@ def get_player_by_username(username: str, guild_id: int = None):
             SELECT
                 p.puuid, p.username,
                 pg.guild_id, pg.channel_id, pg.last_match_id,
-                p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d
+                p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d,
+                p.flex_tier, p.flex_rank, p.flex_lp
             FROM player p
                 JOIN player_guild pg ON p.puuid = pg.player_puuid
             WHERE p.username = ? AND pg.guild_id = ?
@@ -238,14 +259,43 @@ async def username_autocomplete(interaction: Interaction, current: str):
 
 # ----- Opérations sur la table guild -----
 
-def insert_guild(guild_id: int, leaderboard_channel_id: int, flex_enabled: int = 0):
-    """Insert or update guild configuration."""
+def insert_guild(guild_id: int,
+                 leaderboard_channel_id: int | None,
+                 flex_enabled: int | None = 0):
+    """Insert or update guild configuration.
+
+    Uses ``INSERT OR IGNORE`` followed by an ``UPDATE`` so that existing
+    rows aren't replaced, which previously could violate foreign key
+    constraints for related tables.
+    """
     conn = get_connection()
     c = conn.cursor()
+
+    # Ensure a row exists for this guild
     c.execute(
-        "INSERT OR REPLACE INTO guild (guild_id, leaderboard_channel_id, flex_enabled) VALUES (?, ?, ?)",
-        (guild_id, leaderboard_channel_id, flex_enabled)
+        """
+        INSERT OR IGNORE INTO guild (guild_id, leaderboard_channel_id, flex_enabled)
+        VALUES (?, ?, COALESCE(?, 0))
+        """,
+        (guild_id, leaderboard_channel_id, flex_enabled),
     )
+
+    # Update provided fields without clobbering existing data
+    updates = []
+    params: list[object] = []
+    if leaderboard_channel_id is not None:
+        updates.append("leaderboard_channel_id = ?")
+        params.append(leaderboard_channel_id)
+    if flex_enabled is not None:
+        updates.append("flex_enabled = ?")
+        params.append(flex_enabled)
+    if updates:
+        params.append(guild_id)
+        c.execute(
+            f"UPDATE guild SET {', '.join(updates)} WHERE guild_id = ?",
+            params,
+        )
+
     conn.commit()
     conn.close()
 
@@ -348,9 +398,9 @@ def get_leaderboard_data(leaderboard_id: int, guild_id: int):
         """
         SELECT
             p.username,
-            p.tier,
-            p.rank,
-            p.lp,       -- ajout de la colonne current LP
+            CASE WHEN g.flex_enabled = 1 THEN p.flex_tier ELSE p.tier END,
+            CASE WHEN g.flex_enabled = 1 THEN p.flex_rank ELSE p.rank END,
+            CASE WHEN g.flex_enabled = 1 THEN p.flex_lp ELSE p.lp END,
             p.lp_24h,
             p.lp_7d
         FROM leaderboard    AS lb
@@ -358,10 +408,12 @@ def get_leaderboard_data(leaderboard_id: int, guild_id: int):
                       ON lb.leaderboard_id = lp_player.leaderboard_id
                  JOIN player        AS p
                       ON lp_player.player_puuid = p.puuid
+                 JOIN guild         AS g
+                      ON lb.guild_id = g.guild_id
         WHERE lb.guild_id       = ?
           AND lb.leaderboard_id = ?
         """,
-        (guild_id, leaderboard_id)
+        (guild_id, leaderboard_id),
     )
     rows = c.fetchall()
     conn.close()

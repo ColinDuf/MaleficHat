@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Discord Members</title>
+    <script src="https://unpkg.com/vue@3"></script>
+</head>
+<body>
+<div id="app">
+    <h1>Discord Members</h1>
+    <p>Total members: {{ totalCount }}</p>
+
+    <label for="rank">Filter by rank:</label>
+    <select id="rank" v-model="selectedRank" @change="fetchMembers">
+        <option value="">All</option>
+        <option v-for="(count, rank) in rankCounts" :key="rank" :value="rank">{{ rank }} ({{ count }})</option>
+    </select>
+
+    <p>Matching members: {{ members.length }}</p>
+    <ul>
+        <li v-for="m in members" :key="m.puuid">{{ m.username }} - {{ m.rank }} {{ m.tier }}</li>
+    </ul>
+</div>
+<script>
+const { createApp } = Vue;
+createApp({
+    data() {
+        return {
+            members: [],
+            totalCount: 0,
+            rankCounts: {},
+            selectedRank: ''
+        }
+    },
+    methods: {
+        fetchMembers() {
+            const params = this.selectedRank ? `?rank=${this.selectedRank}` : '';
+            fetch('/api/members' + params)
+                .then(r => r.json())
+                .then(data => {
+                    this.members = data.members;
+                });
+        },
+        fetchInitial() {
+            fetch('/api/members')
+                .then(r => r.json())
+                .then(data => {
+                    this.members = data.members;
+                    this.totalCount = data.count;
+                });
+            fetch('/api/rank_counts')
+                .then(r => r.json())
+                .then(data => {
+                    this.rankCounts = data;
+                });
+        }
+    },
+    mounted() {
+        this.fetchInitial();
+    }
+}).mount('#app');
+</script>
+</body>
+</html>

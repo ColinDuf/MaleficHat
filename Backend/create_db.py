@@ -1,7 +1,7 @@
 import logging
 import sqlite3
 
-DB_PATH = "database.db"
+DB_PATH = "Backend/database.db"
 
 def create_db():
     logging.info("Starting DB creation...")
@@ -24,6 +24,9 @@ def create_db():
             rank TEXT,
             tier TEXT,
             lp INTEGER,
+            flex_rank TEXT,
+            flex_tier TEXT,
+            flex_lp INTEGER,
             lp_24h INTEGER,
             lp_7d INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
