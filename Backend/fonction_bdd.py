@@ -15,6 +15,7 @@ def insert_player(puuid: str,
                   tier: str,
                   rank: str,
                   lp: int,
+                  region: str,
                   flex_tier: str = None,
                   flex_rank: str = None,
                   flex_lp: int = None):
@@ -27,10 +28,10 @@ def insert_player(puuid: str,
     c.execute(
         """
         INSERT OR IGNORE INTO player
-          (puuid, username, tier, rank, lp, flex_tier, flex_rank, flex_lp, lp_24h, lp_7d, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          (puuid, username, tier, rank, lp, region, flex_tier, flex_rank, flex_lp, lp_24h, lp_7d, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         """,
-        (puuid, username, tier, rank, lp, flex_tier, flex_rank, flex_lp),
+        (puuid, username, tier, rank, lp, region, flex_tier, flex_rank, flex_lp),
     )
     c.execute(
         """
@@ -39,13 +40,14 @@ def insert_player(puuid: str,
             tier = ?,
             rank = ?,
             lp = ?,
+            region = ?,
             flex_tier = ?,
             flex_rank = ?,
             flex_lp = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE puuid = ?
         """,
-        (username, tier, rank, lp, flex_tier, flex_rank, flex_lp, puuid),
+        (username, tier, rank, lp, region, flex_tier, flex_rank, flex_lp, puuid),
     )
     conn.commit()
     conn.close()
@@ -56,6 +58,7 @@ def update_player_global(puuid: str,
                          lp: int = None,
                          lp_change: int = None,
                          username: str = None,
+                         region: str = None,
                          flex_tier: str = None,
                          flex_rank: str = None,
                          flex_lp: int = None):
@@ -81,6 +84,9 @@ def update_player_global(puuid: str,
     if lp is not None:
         updates.append("lp = ?")
         params.append(lp)
+    if region is not None:
+        updates.append("region = ?")
+        params.append(region)
     if flex_tier is not None:
         updates.append("flex_tier = ?")
         params.append(flex_tier)
@@ -181,7 +187,7 @@ def get_player(puuid: str, guild_id: int):
         """
         SELECT
             p.puuid, p.username,
-            pg.guild_id, pg.channel_id, pg.last_match_id,
+            pg.guild_id, pg.channel_id, p.region, pg.last_match_id,
             p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d,
             p.flex_tier, p.flex_rank, p.flex_lp
         FROM player p
@@ -202,7 +208,7 @@ def get_all_players():
         """
         SELECT
             p.puuid, p.username,
-            pg.guild_id, pg.channel_id, pg.last_match_id,
+            pg.guild_id, pg.channel_id, p.region, pg.last_match_id,
             p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d,
             p.flex_tier, p.flex_rank, p.flex_lp
         FROM player p
@@ -222,7 +228,7 @@ def get_player_by_username(username: str, guild_id: int = None):
             """
             SELECT
                 p.puuid, p.username,
-                pg.guild_id, pg.channel_id, pg.last_match_id,
+                pg.guild_id, pg.channel_id, p.region, pg.last_match_id,
                 p.tier, p.rank, p.lp, p.lp_24h, p.lp_7d,
                 p.flex_tier, p.flex_rank, p.flex_lp
             FROM player p
@@ -233,7 +239,7 @@ def get_player_by_username(username: str, guild_id: int = None):
         )
         result = c.fetchone()
     else:
-        c.execute("SELECT puuid, username FROM player WHERE username = ?", (username,))
+        c.execute("SELECT puuid, username, region FROM player WHERE username = ?", (username,))
         result = c.fetchone()
     conn.close()
     return result

@@ -27,7 +27,7 @@ def test_flex_command_enable(bot_module):
         patch.object(bot_module, 'insert_guild') as ins_guild,
         patch.object(bot_module, 'set_guild_flex_mode') as set_flex,
     ):
-        asyncio.run(bot_module.flex.callback(interaction, 'on'))
+        asyncio.run(bot_module.flex.callback(interaction, 'enable'))
 
     ins_guild.assert_called_once_with(1, None, 1)
     set_flex.assert_not_called()
@@ -43,7 +43,7 @@ def test_flex_command_disable(bot_module):
         patch.object(bot_module, 'get_guild', return_value=(2, None, 1)),
         patch.object(bot_module, 'set_guild_flex_mode') as set_flex,
     ):
-        asyncio.run(bot_module.flex.callback(interaction, 'off'))
+        asyncio.run(bot_module.flex.callback(interaction, 'disable'))
 
     set_flex.assert_called_once_with(2, False)
     interaction.response.send_message.assert_awaited_once()

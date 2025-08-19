@@ -76,6 +76,24 @@ MUSIC_REACTIONS = {
     "🎺": Path("music/ole.mp3"),
 }
 
+# Mapping of simple region codes to platform and cluster
+REGION_MAP = {
+    "euw": ("euw1", "europe"),
+    "eune": ("eun1", "europe"),
+    "na": ("na1", "americas"),
+    "kr": ("kr", "asia"),
+    "br": ("br1", "americas"),
+    "jp": ("jp1", "asia"),
+    "lan": ("la1", "americas"),
+    "las": ("la2", "americas"),
+    "oce": ("oc1", "americas"),
+    "ru": ("ru", "europe"),
+    "tr": ("tr1", "europe"),
+    "vn": ("vn2", "sea"),
+}
+
+PLATFORM_TO_CLUSTER = {platform: cluster for platform, cluster in REGION_MAP.values()}
+
 
 def fetch_json(url: str, headers: dict | None = None,
                retries: int = 3, backoff: float = 1.0):
@@ -126,16 +144,16 @@ async def async_fetch_json(url: str, headers: dict | None = None,
 # Fonctions d'accès à l'API Riot (appel synchrones via requests)
 ##############################################################################
 
-def get_puuid(username, hashtag):
-    url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{username}/{hashtag}"
+def get_puuid(username, hashtag, cluster: str):
+    url = f"https://{cluster}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{username}/{hashtag}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     data = fetch_json(url, headers=headers)
     return data.get('puuid') if data else None
 
-def get_summoner_rank_details_by_puuid(puuid: str, queue: str = "RANKED_SOLO_5x5"):
+def get_summoner_rank_details_by_puuid(puuid: str, queue: str = "RANKED_SOLO_5x5", platform: str = "euw1"):
     """Return detailed rank info for a specific queue using the PUUID directly."""
     url = (
-        "https://euw1.api.riotgames.com/lol/league/v4/entries/by-puuid/"
+        f"https://{platform}.api.riotgames.com/lol/league/v4/entries/by-puuid/"
         f"{puuid}"
     )
     headers = {"X-Riot-Token": RIOT_API_KEY}
@@ -152,8 +170,8 @@ def get_summoner_rank_details_by_puuid(puuid: str, queue: str = "RANKED_SOLO_5x5
                 }
     return None
 
-def get_last_match(puuid, nb_last_match):
-    url = f"https://europe.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type=ranked&count={nb_last_match}"
+def get_last_match(puuid, nb_last_match, cluster: str):
+    url = f"https://{cluster}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?type=ranked&count={nb_last_match}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     matches = fetch_json(url, headers=headers)
     if isinstance(matches, list) and matches:
@@ -196,7 +214,7 @@ def init_champion_mapping() -> None:
             continue
 
 
-def get_match_details(match_id: str, puuid: str):
+def get_match_details(match_id: str, puuid: str, cluster: str):
     """
     Récupère les détails d'un match classé (.match/v5) pour un joueur donné (par son PUUID).
     Construit aussi l’URL de l’image du champion en utilisant la version Data Dragon la plus récente.
@@ -205,7 +223,7 @@ def get_match_details(match_id: str, puuid: str):
         logging.error("No match ID provided.")
         return None
 
-    url = f"https://europe.api.riotgames.com/lol/match/v5/matches/{match_id}"
+    url = f"https://{cluster}.api.riotgames.com/lol/match/v5/matches/{match_id}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     match_data = fetch_json(url, headers=headers)
     if not match_data:
@@ -262,9 +280,10 @@ async def check_username_changes():
     while True:
         players = await async_get_all_players()
         for player in players:
-            puuid, old_username, *_ = player
+            puuid, old_username, _, _, region, *_ = player
 
-            url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
+            cluster = PLATFORM_TO_CLUSTER.get(region, "europe")
+            url = f"https://{cluster}.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
             headers = {"X-Riot-Token": RIOT_API_KEY}
             data = await async_fetch_json(url, headers=headers)
             if data:
@@ -328,7 +347,7 @@ def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
         return 0
 
 
-async def is_in_game(puuid: str, flex: bool = False) -> int | None:
+async def is_in_game(puuid: str, region: str, flex: bool = False) -> int | None:
     """Retourne le championId si le joueur est actuellement en ranked.
 
     L'API spectator peut fournir des parties Flex (queue 440) ou Solo/Duo
@@ -341,7 +360,7 @@ async def is_in_game(puuid: str, flex: bool = False) -> int | None:
     """
 
     url = (
-        "https://euw1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/"
+        f"https://{region}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/"
         f"{puuid}"
     )
     headers = {"X-Riot-Token": RIOT_API_KEY}
@@ -367,14 +386,14 @@ async def is_in_game(puuid: str, flex: bool = False) -> int | None:
 async def async_get_all_players():
     return await asyncio.to_thread(get_all_players)
 
-async def async_is_in_game(puuid, flex: bool = False):
-    return await is_in_game(puuid, flex)
+async def async_is_in_game(puuid, region, flex: bool = False):
+    return await is_in_game(puuid, region, flex)
 
-async def async_get_last_match(puuid, nb_last_match):
-    return await asyncio.to_thread(get_last_match, puuid, nb_last_match)
+async def async_get_last_match(puuid, nb_last_match, cluster):
+    return await asyncio.to_thread(get_last_match, puuid, nb_last_match, cluster)
 
-async def async_get_match_details(match_id, puuid):
-    return await asyncio.to_thread(get_match_details, match_id, puuid)
+async def async_get_match_details(match_id, puuid, cluster):
+    return await asyncio.to_thread(get_match_details, match_id, puuid, cluster)
 
 
 ###############################################################################
@@ -387,11 +406,20 @@ async def async_get_match_details(match_id, puuid):
 )
 @app_commands.describe(
     gamename="The player's Riot in game name",
-    tagline="The player's #"
+    tagline="The player's #",
+    region="Player region (euw, eune, na, kr, br, jp, lan, las, oce, ru, tr, vn)"
 )
-async def register(interaction: discord.Interaction, gamename: str, tagline: str):
+async def register(interaction: discord.Interaction, gamename: str, tagline: str, region: str):
     await interaction.response.defer(ephemeral=True)
     username = f"{gamename.upper()}#{tagline.upper()}"
+    region_key = region.lower()
+    mapping = REGION_MAP.get(region_key)
+    if not mapping:
+        return await interaction.followup.send(
+            "Invalid region. Choose from: euw, eune, na, kr, br, jp, lan, las, oce, ru, tr, vn.",
+            ephemeral=True,
+        )
+    platform, cluster = mapping
     try:
         riot_username, hashtag = username.split("#")
     except ValueError:
@@ -400,7 +428,7 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
             ephemeral=True
         )
 
-    puuid = await asyncio.to_thread(get_puuid, riot_username, hashtag)
+    puuid = await asyncio.to_thread(get_puuid, riot_username, hashtag, cluster)
     if not puuid:
         return await interaction.followup.send(
             f"Error fetching PUUID for {username}.", ephemeral=True
@@ -418,15 +446,15 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
             ephemeral=True
         )
 
-    last_ids = await async_get_last_match(puuid, 1)
+    last_ids = await async_get_last_match(puuid, 1, cluster)
     if not last_ids:
         return await interaction.followup.send(
             f"No ranked matches found for {username}.", ephemeral=True
         )
     last_match_id = last_ids[0]
 
-    solo_data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, "RANKED_SOLO_5x5")
-    flex_data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, "RANKED_FLEX_SR")
+    solo_data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, "RANKED_SOLO_5x5", platform)
+    flex_data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, "RANKED_FLEX_SR", platform)
     if not solo_data:
         return await interaction.followup.send(
             f"Unable to retrieve rank for {username}.", ephemeral=True
@@ -446,6 +474,7 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
         tier_str,
         rank_str,
         lp,
+        platform,
         flex_tier_str,
         flex_rank_str,
         flex_lp,
@@ -546,7 +575,8 @@ async def rank(interaction: discord.Interaction, username: str):
         return
 
     puuid = player[0]
-    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid)
+    region = player[4]
+    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, "RANKED_SOLO_5x5", region)
     if not data:
         await interaction.followup.send("Unable to retrieve rank data.", ephemeral=True)
         return
@@ -612,18 +642,20 @@ async def career(interaction: discord.Interaction, username: str):
         await interaction.followup.send("This player is not registered!", ephemeral=True)
         return
     puuid = player[0]
-    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid)
+    region = player[4]
+    cluster = PLATFORM_TO_CLUSTER.get(region, "europe")
+    data = await asyncio.to_thread(get_summoner_rank_details_by_puuid, puuid, "RANKED_SOLO_5x5", region)
     if not data:
         await interaction.followup.send("Error retrieving player rank information!", ephemeral=True)
         return
     rank_info = f"{data['tier']} {data['rank']} {data['lp']} LP"
-    match_ids = await async_get_last_match(puuid, 10)
+    match_ids = await async_get_last_match(puuid, 10, cluster)
     if not match_ids or not isinstance(match_ids, list):
         await interaction.followup.send("Error retrieving match data or no matches found!", ephemeral=True)
         return
     match_results = []
     for match_id in match_ids:
-        details = await async_get_match_details(match_id, puuid)
+        details = await async_get_match_details(match_id, puuid, cluster)
         if details:
             result, champion, kills, deaths, assists, game_duration, champion_image, damage = details
             match_results.append({
@@ -669,7 +701,7 @@ async def check_ingame():
         try:
             players = await async_get_all_players()
             guild_flex: dict[int, bool] = {}
-            for puuid, username, guild_id, channel_id, *_ in players:
+            for puuid, username, guild_id, channel_id, region, *_ in players:
                 channel = client.get_channel(int(channel_id))
                 if not channel:
                     continue
@@ -680,7 +712,7 @@ async def check_ingame():
                     flex_mode = bool(guild_row[2]) if guild_row else False
                     guild_flex[guild_id] = flex_mode
 
-                champion_id = await is_in_game(puuid, flex_mode)
+                champion_id = await is_in_game(puuid, region, flex_mode)
 
                 player_key = (puuid, guild_id)
 
@@ -768,6 +800,7 @@ async def check_for_game_completion():
                     username,
                     guild_id,
                     alert_channel_id,
+                    region,
                     last_match_id,
                     solo_tier,
                     solo_rank,
@@ -781,23 +814,25 @@ async def check_for_game_completion():
 
                 guild_row = get_guild(guild_id)
                 flex_mode = bool(guild_row[2]) if guild_row else False
-                if await async_is_in_game(puuid, flex_mode):
+                if await async_is_in_game(puuid, region, flex_mode):
                     continue
 
-                last_matches = await async_get_last_match(puuid, 1)
+                cluster = PLATFORM_TO_CLUSTER.get(region, "europe")
+
+                last_matches = await async_get_last_match(puuid, 1, cluster)
                 if not last_matches:
                     continue
                 new_match_id = last_matches[0]
                 if new_match_id == last_match_id:
                     continue
 
-                details = await async_get_match_details(new_match_id, puuid)
+                details = await async_get_match_details(new_match_id, puuid, cluster)
                 if not details:
                     continue
                 result, champion, kills, deaths, assists, game_duration, champ_img, damage = details
 
                 match = await async_fetch_json(
-                    f"https://europe.api.riotgames.com/lol/match/v5/matches/{new_match_id}",
+                    f"https://{cluster}.api.riotgames.com/lol/match/v5/matches/{new_match_id}",
                     headers={"X-Riot-Token": RIOT_API_KEY}
                 )
                 queue_id = match.get("info", {}).get("queueId") if match else None
@@ -823,7 +858,7 @@ async def check_for_game_completion():
                 else:
                     queue_str = "RANKED_FLEX_SR" if is_flex_match else "RANKED_SOLO_5x5"
                     new_details = await asyncio.to_thread(
-                        get_summoner_rank_details_by_puuid, puuid, queue_str
+                        get_summoner_rank_details_by_puuid, puuid, queue_str, region
                     )
                     if not new_details:
                         tier_str = old_tier
@@ -1030,7 +1065,7 @@ async def handle_spectate_reaction(payload: discord.RawReactionActionEvent):
     if not player:
         return
 
-    region = "euw1"
+    region = player[4]
 
     data = await async_fetch_json(
         f"https://{region}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}",

@@ -24,6 +24,7 @@ def create_db():
             rank TEXT,
             tier TEXT,
             lp INTEGER,
+            region TEXT,
             flex_rank TEXT,
             flex_tier TEXT,
             flex_lp INTEGER,

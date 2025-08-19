@@ -42,7 +42,7 @@ def test_check_for_game_completion_updates_flex_rank(bot_module):
     bot_module.recent_match_lp_changes = {}
 
     row = (
-        'p1', 'USER#TAG', 1, 123, 'm0',
+        'p1', 'USER#TAG', 1, 123, 'euw1', 'm0',
         'IV', 'GOLD', 50, 0, 0,
         'III', 'SILVER', 20
     )
@@ -77,7 +77,7 @@ def test_check_for_game_completion_updates_flex_rank(bot_module):
         with pytest.raises(asyncio.CancelledError):
             asyncio.run(bot_module.check_for_game_completion())
 
-    async_is_in_game.assert_awaited_once_with('p1', True)
+    async_is_in_game.assert_awaited_once_with('p1', 'euw1', True)
     update_player_global.assert_called_once_with(
         'p1',
         flex_tier='II',
