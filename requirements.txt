@@ -5,3 +5,4 @@ schedule
 dotenv
 pytest
 flask
+PyNaCl

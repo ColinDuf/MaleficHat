@@ -75,7 +75,7 @@ async def add_leaderboard_cmd(
             f"❌ Le joueur {username} n'est pas enregistré ici.",
             ephemeral=True
         )
-    puuid = player[1]
+    puuid = player[0]
 
     # Récupère l'ID du leaderboard (ligne dédiée)
     lb_id = get_leaderboard_by_guild(guild_id)
@@ -121,7 +121,7 @@ async def remove_leaderboard_cmd(
             f"❌ Le joueur {username} n'est pas enregistré ici.",
             ephemeral=True
         )
-    puuid = player[1]
+    puuid = player[0]
 
     lb_id = get_leaderboard_by_guild(guild_id)
     if lb_id is None:

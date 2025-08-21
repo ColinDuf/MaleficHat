@@ -94,6 +94,10 @@ REGION_MAP = {
 
 PLATFORM_TO_CLUSTER = {platform: cluster for platform, cluster in REGION_MAP.values()}
 
+REGION_CHOICES = [
+    app_commands.Choice(name=key.upper(), value=key)
+    for key in REGION_MAP.keys()
+]
 
 def fetch_json(url: str, headers: dict | None = None,
                retries: int = 3, backoff: float = 1.0):
@@ -228,47 +232,49 @@ def get_match_details(match_id: str, puuid: str, cluster: str):
     match_data = fetch_json(url, headers=headers)
     if not match_data:
         return None
-    game_mode = match_data.get("info", {}).get("queueId")
-    if game_mode == 420:
-        # Récupère la version Data Dragon à la volée
-        ddragon_version = get_ddragon_latest_version()
+    queue_id = match_data.get("info", {}).get("queueId")
+    if queue_id not in (420, 440):
+        return None
 
-        for participant in match_data["info"].get("participants", []):
-            if participant.get("puuid") == puuid:
-                # Résultat (victoire/défaite)
-                result = ":green_circle:" if participant.get("win") else ":red_circle:"
-                champion = participant.get("championName", "")
-                champ_id = participant.get("championId")
-                kills = participant.get("kills", 0)
-                deaths = participant.get("deaths", 0)
-                assists = participant.get("assists", 0)
-                damage = participant.get("totalDamageDealtToChampions", 0)
+    # Récupère la version Data Dragon à la volée
+    ddragon_version = get_ddragon_latest_version()
 
-                # Durée de la partie (format mm:ss ou hh:mm:ss)
-                game_duration_seconds = match_data["info"].get("gameDuration", 0)
-                if game_duration_seconds >= 3600:
-                    game_duration = str(timedelta(seconds=game_duration_seconds))
-                else:
-                    minutes = game_duration_seconds // 60
-                    seconds = game_duration_seconds % 60
-                    game_duration = f"{minutes}:{seconds:02d}"
+    for participant in match_data["info"].get("participants", []):
+        if participant.get("puuid") == puuid:
+            # Résultat (victoire/défaite)
+            result = ":green_circle:" if participant.get("win") else ":red_circle:"
+            champion = participant.get("championName", "")
+            champ_id = participant.get("championId")
+            kills = participant.get("kills", 0)
+            deaths = participant.get("deaths", 0)
+            assists = participant.get("assists", 0)
+            damage = participant.get("totalDamageDealtToChampions", 0)
 
-                champ_slug = CHAMPION_MAPPING.get(champ_id, champion)
-                champion_image = (
-                    f"https://ddragon.leagueoflegends.com/cdn/"
-                    f"{ddragon_version}/img/champion/{champ_slug}.png"
-                )
+            # Durée de la partie (format mm:ss ou hh:mm:ss)
+            game_duration_seconds = match_data["info"].get("gameDuration", 0)
+            if game_duration_seconds >= 3600:
+                game_duration = str(timedelta(seconds=game_duration_seconds))
+            else:
+                minutes = game_duration_seconds // 60
+                seconds = game_duration_seconds % 60
+                game_duration = f"{minutes}:{seconds:02d}"
 
-                return (
-                    result,
-                    champion,
-                    kills,
-                    deaths,
-                    assists,
-                    game_duration,
-                    champion_image,
-                    damage
-                )
+            champ_slug = CHAMPION_MAPPING.get(champ_id, champion)
+            champion_image = (
+                f"https://ddragon.leagueoflegends.com/cdn/"
+                f"{ddragon_version}/img/champion/{champ_slug}.png"
+            )
+
+            return (
+                result,
+                champion,
+                kills,
+                deaths,
+                assists,
+                game_duration,
+                champion_image,
+                damage
+            )
 
     return None
 
@@ -407,12 +413,18 @@ async def async_get_match_details(match_id, puuid, cluster):
 @app_commands.describe(
     gamename="The player's Riot in game name",
     tagline="The player's #",
-    region="Player region (euw, eune, na, kr, br, jp, lan, las, oce, ru, tr, vn)"
+    region="Player region"
 )
-async def register(interaction: discord.Interaction, gamename: str, tagline: str, region: str):
+@app_commands.choices(region=REGION_CHOICES)
+async def register(
+        interaction: discord.Interaction,
+        gamename: str,
+        tagline: str,
+        region: app_commands.Choice[str],
+):
     await interaction.response.defer(ephemeral=True)
     username = f"{gamename.upper()}#{tagline.upper()}"
-    region_key = region.lower()
+    region_key = region.value.lower()
     mapping = REGION_MAP.get(region_key)
     if not mapping:
         return await interaction.followup.send(
@@ -488,8 +500,9 @@ async def register(interaction: discord.Interaction, gamename: str, tagline: str
     )
 
     total = count_players()
+    user = interaction.user
     logging.info(
-        f"[REGISTER] {username} --> Discord ID : {channel_id} --> Registered : {total}"
+        f"[REGISTER] {username} --> User: {user} ({user.id}) --> Channel ID: {channel_id} --> Registered: {total}"
     )
 
 
@@ -602,7 +615,7 @@ async def rank(interaction: discord.Interaction, username: str):
         "CHALLENGER": "challenger.png",
     }
     emblem_file = tier_files.get(tier.upper())
-    emblem_path = Path("assets") / emblem_file if emblem_file else None
+    emblem_path = Path("Backend/assets") / emblem_file if emblem_file else None
 
     if emblem_path and emblem_path.exists():
         file = discord.File(str(emblem_path), filename=emblem_file)
@@ -954,7 +967,7 @@ async def check_for_game_completion():
 async def send_match_result_embed(channel, username, result, kills, deaths, assists,
                                   champion_image, lp_change, damage, is_early_surrender: bool = False):
     if is_early_surrender:
-        game_result = "Early Surrender"
+        game_result = "Remake"
         color = discord.Color.orange()
     else:
         game_result = "Victory" if result == ':green_circle:' else "Defeat"
