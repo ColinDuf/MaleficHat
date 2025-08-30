@@ -1,7 +1,7 @@
 import sqlite3
 from discord import app_commands, Interaction
 
-DB_PATH = "Backend/database.db"
+DB_PATH = "/root/MaleficHat/Backend/database.db"
 
 def get_connection():
     """Retourne une connexion SQLite avec les FK activées."""
@@ -404,9 +404,9 @@ def get_leaderboard_data(leaderboard_id: int, guild_id: int):
         """
         SELECT
             p.username,
-            CASE WHEN g.flex_enabled = 1 THEN p.flex_tier ELSE p.tier END,
-            CASE WHEN g.flex_enabled = 1 THEN p.flex_rank ELSE p.rank END,
-            CASE WHEN g.flex_enabled = 1 THEN p.flex_lp ELSE p.lp END,
+            p.tier,
+            p.rank,
+            p.lp,
             p.lp_24h,
             p.lp_7d
         FROM leaderboard    AS lb
@@ -414,8 +414,6 @@ def get_leaderboard_data(leaderboard_id: int, guild_id: int):
                       ON lb.leaderboard_id = lp_player.leaderboard_id
                  JOIN player        AS p
                       ON lp_player.player_puuid = p.puuid
-                 JOIN guild         AS g
-                      ON lb.guild_id = g.guild_id
         WHERE lb.guild_id       = ?
           AND lb.leaderboard_id = ?
         """,

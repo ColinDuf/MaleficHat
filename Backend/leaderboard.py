@@ -171,7 +171,7 @@ async def update_leaderboard_message(channel_id: int, bot: discord.Client, guild
     rows.sort(key=lambda x: (
         -rank_idx(x[2]),    # meilleur rang en premier, "Unranked" en dernier
         -tier_idx(x[1]),    # meilleure division en premier
-        -x[3]                      # plus de LP courant en premier
+        -(x[3] if x[3] is not None else float('-inf'))
     ))
 
     # 2) Prépare header et séparateur

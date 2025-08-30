@@ -319,6 +319,8 @@ def calculate_lp_change(old_tier, old_rank, old_lp, new_tier, new_rank, new_lp):
     tier_order = ['IV', 'III', 'II', 'I']
 
     try:
+        if old_lp is None or new_lp is None or not old_rank or not new_rank:
+            return 0
         # Cas où la catégorie (rank) n'a pas changé
         if old_rank == new_rank:
             # Rangs sans divisions (Master et au-dessus)
@@ -615,7 +617,7 @@ async def rank(interaction: discord.Interaction, username: str):
         "CHALLENGER": "challenger.png",
     }
     emblem_file = tier_files.get(tier.upper())
-    emblem_path = Path("Backend/assets") / emblem_file if emblem_file else None
+    emblem_path = Path("/assets") / emblem_file if emblem_file else None
 
     if emblem_path and emblem_path.exists():
         file = discord.File(str(emblem_path), filename=emblem_file)

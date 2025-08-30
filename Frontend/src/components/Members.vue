@@ -9,7 +9,9 @@
     <p v-if="count !== null">Total: {{ count }}</p>
 
     <ul>
-      <li v-for="member in members" :key="member.id">{{ member.name }} ({{ member.rank }})</li>
+      <li v-for="member in members" :key="member.username">
+        {{ member.username }} - {{ member.rank }} {{ member.tier || '' }}
+      </li>
     </ul>
   </div>
 </template>
@@ -24,10 +26,17 @@ const count = ref(null);
 
 async function fetchMembers() {
   const params = selectedRank.value ? `?rank=${encodeURIComponent(selectedRank.value)}` : '';
-  const response = await fetch(`/api/members${params}`);
-  const data = await response.json();
-  members.value = data.members;
-  count.value = data.count;
+  try {
+    const response = await fetch(`/api/members${params}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    members.value = data.members;
+    count.value = data.count;
+  } catch (err) {
+    console.error('Failed to fetch members', err);
+    members.value = [];
+    count.value = null;
+  }
 }
 
 // Fetch all members on component mount

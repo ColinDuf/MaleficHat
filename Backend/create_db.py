@@ -1,7 +1,7 @@
 import logging
 import sqlite3
 
-DB_PATH = "Backend/database.db"
+DB_PATH = "/root/MaleficHat/Backend/database.db"
 
 def create_db():
     logging.info("Starting DB creation...")
