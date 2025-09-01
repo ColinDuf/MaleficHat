@@ -258,9 +258,10 @@ async def username_autocomplete(interaction: Interaction, current: str):
     rows = c.fetchall()
     conn.close()
     choices = [row[0] for row in rows]
+    filtered = [choice for choice in choices if current.lower() in choice.lower()]
     return [
         app_commands.Choice(name=choice, value=choice)
-        for choice in choices if current.lower() in choice.lower()
+        for choice in filtered[:25]
     ]
 
 # ----- Opérations sur la table guild -----

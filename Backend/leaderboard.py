@@ -1,6 +1,7 @@
 import discord
 from discord import app_commands
 import logging
+import io
 
 from fonction_bdd import (
     get_guild,
@@ -196,10 +197,17 @@ async def update_leaderboard_message(channel_id: int, bot: discord.Client, guild
         lp7_col  = str(lp7d).rjust(lp7_w)
         lines.append(f"{user_col}|{rank_col}|{lp24_col}|{lp7_col}")
 
-    # 5) Assemble le bloc de code Markdown
-    table = "```" + "\n".join(lines) + "```"
+    # 5) Assemble le bloc de code Markdown et gère la taille
+    code_block = "```" + "\n".join(lines) + "```"
+    is_too_long = len(code_block) > 2000
+    file = None
+    if is_too_long:
+        file = discord.File(
+            io.BytesIO("\n".join(lines).encode("utf-8")),
+            filename="leaderboard.txt",
+        )
 
-    # 6) Recherche un ancien message à éditer
+    # 6) Recherche un ancien message à éditer ou à supprimer
     guild_obj = bot.get_guild(guild_id)
     if guild_obj is None:
         logging.error(
@@ -219,18 +227,27 @@ async def update_leaderboard_message(channel_id: int, bot: discord.Client, guild
         )
         return
 
+    existing_msg = None
     async for msg in channel.history(limit=50):
         if (
                 msg.author == guild_obj.me
-                and msg.content.startswith("```")
-                and header in msg.content
+                and (msg.content.startswith("```") or msg.content.startswith("Leaderboard is too long"))
         ):
-            await msg.edit(content=table)
-            return
+            existing_msg = msg
+            break
 
-    # 7) Sinon, envoie un nouveau message
+    if not is_too_long:
+        if existing_msg:
+            await existing_msg.edit(content=code_block)
+        else:
+            await channel.send(code_block)
+        return
+
+    # Contenu trop long: supprime l'ancien message et envoie un fichier
+    if existing_msg:
+        await existing_msg.delete()
     try:
-        await channel.send(table)
+        await channel.send("Leaderboard is too long; see attached file.", file=file)
     except discord.DiscordException as e:
         logging.error(f"[update_leaderboard_message] Failed to send leaderboard: {e}")
 
