@@ -10,6 +10,74 @@ def get_connection():
     return conn
 
 
+# ----- Configuration du fuseau horaire par guilde -----
+
+def get_reset_timezone(guild_id: int) -> str:
+    """Return the reset timezone for a guild or Paris time by default."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT reset_timezone FROM guild WHERE guild_id = ?", (guild_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row and row[0] else "Europe/Paris"
+
+
+def set_reset_timezone(guild_id: int, tz: str) -> None:
+    """Persist the reset timezone for a guild."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        """
+        INSERT INTO guild(guild_id, reset_timezone)
+        VALUES(?, ?)
+        ON CONFLICT(guild_id) DO UPDATE SET reset_timezone=excluded.reset_timezone
+        """,
+        (guild_id, tz),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_all_guild_timezones() -> list[tuple[int, str]]:
+    """Return list of (guild_id, reset_timezone) for all guilds."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT guild_id, reset_timezone FROM guild")
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+# ----- Recap settings per guild -----
+
+def is_recap_enabled(guild_id: int, period: str) -> bool:
+    """Check if daily or weekly recap is enabled for a guild."""
+    column = "daily_recap_enabled" if period == "daily" else "weekly_recap_enabled"
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(f"SELECT {column} FROM guild WHERE guild_id = ?", (guild_id,))
+    row = c.fetchone()
+    conn.close()
+    return bool(row and row[0])
+
+
+def set_recap_mode(guild_id: int, period: str, enabled: bool) -> None:
+    """Enable or disable daily or weekly recaps for a guild."""
+    column = "daily_recap_enabled" if period == "daily" else "weekly_recap_enabled"
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        f"""
+        INSERT INTO guild(guild_id, {column})
+        VALUES(?, ?)
+        ON CONFLICT(guild_id) DO UPDATE SET {column}=excluded.{column}
+        """,
+        (guild_id, 1 if enabled else 0),
+    )
+    conn.commit()
+    conn.close()
+
+
 def insert_player(puuid: str,
                   username: str,
                   tier: str,
@@ -268,7 +336,8 @@ async def username_autocomplete(interaction: Interaction, current: str):
 
 def insert_guild(guild_id: int,
                  leaderboard_channel_id: int | None,
-                 flex_enabled: int | None = 0):
+                 flex_enabled: int | None = 0,
+                 reset_timezone: str | None = None):
     """Insert or update guild configuration.
 
     Uses ``INSERT OR IGNORE`` followed by an ``UPDATE`` so that existing
@@ -281,10 +350,10 @@ def insert_guild(guild_id: int,
     # Ensure a row exists for this guild
     c.execute(
         """
-        INSERT OR IGNORE INTO guild (guild_id, leaderboard_channel_id, flex_enabled)
-        VALUES (?, ?, COALESCE(?, 0))
+        INSERT OR IGNORE INTO guild (guild_id, leaderboard_channel_id, flex_enabled, reset_timezone)
+        VALUES (?, ?, COALESCE(?, 0), COALESCE(?, 'Europe/Paris'))
         """,
-        (guild_id, leaderboard_channel_id, flex_enabled),
+        (guild_id, leaderboard_channel_id, flex_enabled, reset_timezone),
     )
 
     # Update provided fields without clobbering existing data
@@ -296,6 +365,9 @@ def insert_guild(guild_id: int,
     if flex_enabled is not None:
         updates.append("flex_enabled = ?")
         params.append(flex_enabled)
+    if reset_timezone is not None:
+        updates.append("reset_timezone = ?")
+        params.append(reset_timezone)
     if updates:
         params.append(guild_id)
         c.execute(
@@ -427,19 +499,38 @@ def get_leaderboard_data(leaderboard_id: int, guild_id: int):
 
 # ----- Remise à zéro des LP -----
 
-def reset_all_lp_24h():
-    """Remet à zéro lp_24h pour tous les joueurs."""
+def reset_lp_24h_for_guild(guild_id: int):
+    """Reset lp_24h for players belonging to a guild."""
     conn = get_connection()
     c = conn.cursor()
-    c.execute("UPDATE player SET lp_24h = 0")
+    c.execute(
+        """
+        UPDATE player
+        SET lp_24h = 0
+        WHERE puuid IN (
+            SELECT player_puuid FROM player_guild WHERE guild_id = ?
+        )
+        """,
+        (guild_id,),
+    )
     conn.commit()
     conn.close()
 
-def reset_all_lp_7d():
-    """Remet à zéro lp_7d pour tous les joueurs."""
+
+def reset_lp_7d_for_guild(guild_id: int):
+    """Reset lp_7d for players belonging to a guild."""
     conn = get_connection()
     c = conn.cursor()
-    c.execute("UPDATE player SET lp_7d = 0")
+    c.execute(
+        """
+        UPDATE player
+        SET lp_7d = 0
+        WHERE puuid IN (
+            SELECT player_puuid FROM player_guild WHERE guild_id = ?
+        )
+        """,
+        (guild_id,),
+    )
     conn.commit()
     conn.close()
 

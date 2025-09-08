@@ -25,7 +25,10 @@ from fonction_bdd import (
     delete_leaderboard_member,
     count_players,
     set_guild_flex_mode,
+    set_reset_timezone,
+    set_recap_mode,
 )
+from zoneinfo import ZoneInfo
 import requests
 import tracemalloc
 from pathlib import Path
@@ -576,6 +579,67 @@ async def flex(interaction: discord.Interaction, mode: str):
     return None
 
 
+@tree.command(name="settime", description="Set leaderboard reset timezone")
+@app_commands.describe(timezone="IANA timezone like Europe/Paris or UTC")
+async def settime(interaction: discord.Interaction, timezone: str):
+    try:
+        ZoneInfo(timezone)
+    except Exception:
+        return await interaction.response.send_message(
+            "❌ Invalid timezone. Example: Europe/Paris or UTC.",
+            ephemeral=True,
+        )
+    set_reset_timezone(interaction.guild.id, timezone)
+    await interaction.response.send_message(
+        f"✅ Reset timezone set to {timezone}.",
+        ephemeral=True,
+    )
+    return None
+
+
+@tree.command(name="recap", description="Enable or disable daily/weekly recaps")
+@app_commands.choices(period=[
+    app_commands.Choice(name="daily", value="daily"),
+    app_commands.Choice(name="weekly", value="weekly"),
+])
+@app_commands.choices(mode=[
+    app_commands.Choice(name="enable", value="enable"),
+    app_commands.Choice(name="disable", value="disable"),
+])
+@app_commands.describe(period="Choose daily or weekly recap", mode="Enable or disable the recap")
+async def recap(interaction: discord.Interaction, period: str, mode: str):
+    enable = mode.lower() == "enable"
+    set_recap_mode(interaction.guild.id, period, enable)
+    await interaction.response.send_message(
+        f"{period.capitalize()} recap {'enabled' if enable else 'disabled'}.",
+        ephemeral=True,
+    )
+    return None
+
+
+@tree.command(name="help", description="Get a link to the help server")
+async def help_cmd(interaction: discord.Interaction):
+    await interaction.response.send_message(
+        "Need help? Join our support server: https://discord.gg/vZHPkBHmkC",
+        ephemeral=True,
+    )
+    return None
+
+
+@tree.command(name="howtosetup", description="Learn how to configure the bot")
+async def howtosetup_cmd(interaction: discord.Interaction):
+    await interaction.response.send_message(
+        (
+            "To set up the bot: /leaderboard creates a leaderboard channel, "
+            "/register adds players, /settime chooses your reset timezone, "
+            "/recap daily|weekly enable enables recap messages. For more help join "
+            "https://discord.gg/vZHPkBHmkC"
+        ),
+        ephemeral=True,
+    )
+    return None
+
+
 @tree.command(name="rank", description="Display a player's current Solo/Duo rank")
 @app_commands.autocomplete(username=username_autocomplete)
 async def rank(interaction: discord.Interaction, username: str):
@@ -758,9 +822,8 @@ async def check_ingame():
                         msg = await channel.send(embed=embed)
                     except discord.Forbidden:
                         logging.warning(
-                            f"[check_ingame] Missing access to channel {channel_id}. Disabling alerts."
+                            f"[check_ingame] Missing access to channel {channel_id}."
                         )
-                        update_player_guild(puuid, guild_id, channel_id=0)
                         msg = None
 
                     except discord.DiscordException as e:
@@ -969,7 +1032,7 @@ async def check_for_game_completion():
 async def send_match_result_embed(channel, username, result, kills, deaths, assists,
                                   champion_image, lp_change, damage, is_early_surrender: bool = False):
     if is_early_surrender:
-        game_result = "Remake"
+        game_result = "Early Surrender"
         color = discord.Color.orange()
     else:
         game_result = "Victory" if result == ':green_circle:' else "Defeat"

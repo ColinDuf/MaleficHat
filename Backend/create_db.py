@@ -13,7 +13,10 @@ def create_db():
         CREATE TABLE IF NOT EXISTS guild (
             guild_id INTEGER PRIMARY KEY,
             leaderboard_channel_id INTEGER,
-            flex_enabled INTEGER DEFAULT 0
+            flex_enabled INTEGER DEFAULT 0,
+            reset_timezone TEXT DEFAULT 'Europe/Paris',
+            daily_recap_enabled INTEGER DEFAULT 0,
+            weekly_recap_enabled INTEGER DEFAULT 0
         );
         """)
 
