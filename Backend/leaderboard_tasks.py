@@ -13,6 +13,7 @@ from fonction_bdd import (
     get_leaderboard_data,
 )
 from leaderboard import update_leaderboard_message
+from recap import build_recap_embed
 
 leaderboard_update_event = asyncio.Event()
 
@@ -46,12 +47,6 @@ async def notify_leaderboard_update(bot):
 async def reset_lp_scheduler(bot):
     """Schedule LP resets per guild according to each timezone."""
 
-    async def wait_until(target: datetime):
-        now = datetime.now(target.tzinfo)
-        delta = (target - now).total_seconds()
-        if delta > 0:
-            await asyncio.sleep(delta)
-
     async def send_recap(guild_id: int, period: str):
         lb_id = get_leaderboard_by_guild(guild_id)
         if lb_id is None:
@@ -68,23 +63,22 @@ async def reset_lp_scheduler(bot):
         channel = bot.get_channel(channel_id)
         if channel is None:
             return
-        index = 4 if period == "daily" else 5
-        sorted_rows = sorted(rows, key=lambda r: r[index], reverse=True)
-        title = "Daily" if period == "daily" else "Weekly"
-        lines = [
-            f"{i+1}. {row[0]}: {row[index]} LP" for i, row in enumerate(sorted_rows)
-        ]
-        if lines:
-            await channel.send("**" + title + " recap**\n" + "\n".join(lines))
+        embed = build_recap_embed(rows, period)
+        if embed.fields:
+            await channel.send(embed=embed)
 
     async def daily_reset(guild_id: int):
         while True:
             tz = ZoneInfo(get_reset_timezone(guild_id))
-            now = datetime.now(tz)
-            next_midnight = datetime.combine(
-                now.date() + timedelta(days=1), time.min, tzinfo=tz
-            )
-            await wait_until(next_midnight)
+            target = _next_midnight(tz)
+            while True:
+                tz = ZoneInfo(get_reset_timezone(guild_id))
+                now = datetime.now(tz)
+                delta = (target - now).total_seconds()
+                if delta <= 0:
+                    break
+                await asyncio.sleep(min(delta, 3600))
+                target = _next_midnight(ZoneInfo(get_reset_timezone(guild_id)))
             if is_recap_enabled(guild_id, "daily"):
                 await send_recap(guild_id, "daily")
             reset_lp_24h_for_guild(guild_id)
@@ -93,13 +87,15 @@ async def reset_lp_scheduler(bot):
     async def weekly_reset(guild_id: int):
         while True:
             tz = ZoneInfo(get_reset_timezone(guild_id))
-            now = datetime.now(tz)
-            days_ahead = (0 - now.weekday() + 7) % 7
-            if days_ahead == 0:
-                days_ahead = 7
-            next_monday_date = (now + timedelta(days=days_ahead)).date()
-            next_monday = datetime.combine(next_monday_date, time.min, tzinfo=tz)
-            await wait_until(next_monday)
+            target = _next_monday(tz)
+            while True:
+                tz = ZoneInfo(get_reset_timezone(guild_id))
+                now = datetime.now(tz)
+                delta = (target - now).total_seconds()
+                if delta <= 0:
+                    break
+                await asyncio.sleep(min(delta, 3600))
+                target = _next_monday(ZoneInfo(get_reset_timezone(guild_id)))
             if is_recap_enabled(guild_id, "weekly"):
                 await send_recap(guild_id, "weekly")
             reset_lp_7d_for_guild(guild_id)

@@ -632,10 +632,12 @@ async def help_cmd(interaction: discord.Interaction):
 async def howtosetup_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(
         (
-            "To set up the bot: /leaderboard creates a leaderboard channel, "
-            "/register adds players, /settime chooses your reset timezone, "
-            "/recap daily|weekly enable enables recap messages. For more help join "
-            "https://discord.gg/vZHPkBHmkC"
+            "To set up the bot: "
+            "- /register --> adds players"
+            "- /leaderboard --> creates a leaderboard channel"
+            "- /settime --> chooses your reset timezone"
+            "- /recap daily|weekly enable --> enables recap messages"
+            "For more help join : https://discord.gg/vZHPkBHmkC"
         ),
         ephemeral=True,
     )
