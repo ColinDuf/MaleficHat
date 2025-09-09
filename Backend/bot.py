@@ -1,14 +1,20 @@
+import asyncio
+import logging
+import os
+import time
+import tracemalloc
+from datetime import timedelta
+from pathlib import Path
+from zoneinfo import ZoneInfo
+from timezones import resolve_timezone
 import aiohttp
 import discord
+import requests
 from discord import app_commands
-import os
-import logging
-import asyncio
-from datetime import timedelta
 from dotenv import load_dotenv
-from create_db import create_db
-from leaderboard_tasks import reset_lp_scheduler
+
 import leaderboard
+from create_db import create_db
 from fonction_bdd import (
     insert_player,
     get_player_by_username,
@@ -28,12 +34,8 @@ from fonction_bdd import (
     set_reset_timezone,
     set_recap_mode,
 )
-from zoneinfo import ZoneInfo
-import requests
-import tracemalloc
-from pathlib import Path
+from leaderboard_tasks import reset_lp_scheduler
 from log import DiscordLogHandler
-import time
 
 tracemalloc.start()
 load_dotenv()
@@ -583,8 +585,8 @@ async def flex(interaction: discord.Interaction, mode: str):
 @app_commands.describe(timezone="IANA timezone like Europe/Paris or UTC")
 async def settime(interaction: discord.Interaction, timezone: str):
     try:
-        ZoneInfo(timezone)
-    except Exception:
+        timezone = resolve_timezone(timezone)
+    except ValueError:
         return await interaction.response.send_message(
             "❌ Invalid timezone. Example: Europe/Paris or UTC.",
             ephemeral=True,

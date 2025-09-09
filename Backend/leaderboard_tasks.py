@@ -16,6 +16,20 @@ from leaderboard import update_leaderboard_message
 
 leaderboard_update_event = asyncio.Event()
 
+def _next_midnight(tz: ZoneInfo, now: datetime | None = None) -> datetime:
+    """Return the next midnight for a timezone relative to ``now``."""
+    now = datetime.now(tz) if now is None else now
+    return datetime.combine(now.date() + timedelta(days=1), time.min, tzinfo=tz)
+
+
+def _next_monday(tz: ZoneInfo, now: datetime | None = None) -> datetime:
+    """Return the next Monday midnight for a timezone relative to ``now``."""
+    now = datetime.now(tz) if now is None else now
+    days_ahead = (0 - now.weekday() + 7) % 7 or 7
+    next_monday_date = (now + timedelta(days=days_ahead)).date()
+    return datetime.combine(next_monday_date, time.min, tzinfo=tz)
+
+
 async def notify_leaderboard_update(bot):
     """
     Attend que l'événement soit déclenché pour mettre à jour le leaderboard dans tous les guilds concernés.

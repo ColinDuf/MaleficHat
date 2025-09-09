@@ -1,7 +1,7 @@
 import sqlite3
 from discord import app_commands, Interaction
 
-DB_PATH = "/root/MaleficHat/Backend/database.db"
+DB_PATH = "Backend/database.db"
 
 def get_connection():
     """Retourne une connexion SQLite avec les FK activées."""

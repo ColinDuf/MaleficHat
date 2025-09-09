@@ -246,6 +246,18 @@ async def update_leaderboard_message(channel_id: int, bot: discord.Client, guild
     # Contenu trop long: supprime l'ancien message et envoie un fichier
     if existing_msg:
         await existing_msg.delete()
+        try:
+            await existing_msg.delete()
+        except discord.NotFound:
+            logging.warning(
+                f"[update_leaderboard_message] Missing leaderboard message in "
+                f"channel {channel.name} ({channel_id}) on guild {guild_obj.name} ({guild_id})"
+            )
+        except discord.DiscordException as e:
+            logging.error(
+                f"[update_leaderboard_message] Failed to delete leaderboard message in "
+                f"channel {channel.name} ({channel_id}) on guild {guild_obj.name} ({guild_id}): {e}"
+            )
     try:
         await channel.send("Leaderboard is too long; see attached file.", file=file)
     except discord.DiscordException as e:
