@@ -10,42 +10,16 @@ def get_connection():
     return conn
 
 
-# ----- Configuration du fuseau horaire par guilde -----
+# ----- Guild queries -----
 
-def get_reset_timezone(guild_id: int) -> str:
-    """Return the reset timezone for a guild or Paris time by default."""
+def get_all_guild_ids() -> list[int]:
+    """Return list of guild IDs."""
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT reset_timezone FROM guild WHERE guild_id = ?", (guild_id,))
-    row = c.fetchone()
-    conn.close()
-    return row[0] if row and row[0] else "Europe/Paris"
-
-
-def set_reset_timezone(guild_id: int, tz: str) -> None:
-    """Persist the reset timezone for a guild."""
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute(
-        """
-        INSERT INTO guild(guild_id, reset_timezone)
-        VALUES(?, ?)
-        ON CONFLICT(guild_id) DO UPDATE SET reset_timezone=excluded.reset_timezone
-        """,
-        (guild_id, tz),
-    )
-    conn.commit()
-    conn.close()
-
-
-def get_all_guild_timezones() -> list[tuple[int, str]]:
-    """Return list of (guild_id, reset_timezone) for all guilds."""
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT guild_id, reset_timezone FROM guild")
+    c.execute("SELECT guild_id FROM guild")
     rows = c.fetchall()
     conn.close()
-    return rows
+    return [row[0] for row in rows]
 
 
 # ----- Recap settings per guild -----
@@ -336,8 +310,7 @@ async def username_autocomplete(interaction: Interaction, current: str):
 
 def insert_guild(guild_id: int,
                  leaderboard_channel_id: int | None,
-                 flex_enabled: int | None = 0,
-                 reset_timezone: str | None = None):
+                 flex_enabled: int | None = 0):
     """Insert or update guild configuration.
 
     Uses ``INSERT OR IGNORE`` followed by an ``UPDATE`` so that existing
@@ -350,10 +323,10 @@ def insert_guild(guild_id: int,
     # Ensure a row exists for this guild
     c.execute(
         """
-        INSERT OR IGNORE INTO guild (guild_id, leaderboard_channel_id, flex_enabled, reset_timezone)
-        VALUES (?, ?, COALESCE(?, 0), COALESCE(?, 'Europe/Paris'))
+        INSERT OR IGNORE INTO guild (guild_id, leaderboard_channel_id, flex_enabled)
+        VALUES (?, ?, COALESCE(?, 0))
         """,
-        (guild_id, leaderboard_channel_id, flex_enabled, reset_timezone),
+        (guild_id, leaderboard_channel_id, flex_enabled),
     )
 
     # Update provided fields without clobbering existing data
@@ -365,9 +338,6 @@ def insert_guild(guild_id: int,
     if flex_enabled is not None:
         updates.append("flex_enabled = ?")
         params.append(flex_enabled)
-    if reset_timezone is not None:
-        updates.append("reset_timezone = ?")
-        params.append(reset_timezone)
     if updates:
         params.append(guild_id)
         c.execute(

@@ -11,10 +11,11 @@ def test_howtosetup_command(bot_module):
 
     interaction.response.send_message.assert_awaited_once_with(
         (
-            "To set up the bot: /leaderboard creates a leaderboard channel, "
-            "/register adds players, /settime chooses your reset timezone, "
-            "/recap daily|weekly enable enables recap messages. For more help join "
-            "https://discord.gg/vZHPkBHmkC"
+            "To set up the bot: \n"
+            "- /register --> adds players\n"
+            "- /leaderboard --> creates a leaderboard channel\n"
+            "- /recap daily|weekly enable --> enables recap messages\n"
+            "For more help join : https://discord.gg/vZHPkBHmkC"
         ),
         ephemeral=True,
     )
