@@ -5,8 +5,6 @@ import time
 import tracemalloc
 from datetime import timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
-from timezones import resolve_timezone
 import aiohttp
 import discord
 import requests
@@ -31,7 +29,6 @@ from fonction_bdd import (
     delete_leaderboard_member,
     count_players,
     set_guild_flex_mode,
-    set_reset_timezone,
     set_recap_mode,
 )
 from leaderboard_tasks import reset_lp_scheduler
@@ -580,25 +577,6 @@ async def flex(interaction: discord.Interaction, mode: str):
     )
     return None
 
-
-@tree.command(name="settime", description="Set leaderboard reset timezone")
-@app_commands.describe(timezone="IANA timezone like Europe/Paris or UTC")
-async def settime(interaction: discord.Interaction, timezone: str):
-    try:
-        timezone = resolve_timezone(timezone)
-    except ValueError:
-        return await interaction.response.send_message(
-            "❌ Invalid timezone. Example: Europe/Paris or UTC.",
-            ephemeral=True,
-        )
-    set_reset_timezone(interaction.guild.id, timezone)
-    await interaction.response.send_message(
-        f"✅ Reset timezone set to {timezone}.",
-        ephemeral=True,
-    )
-    return None
-
-
 @tree.command(name="recap", description="Enable or disable daily/weekly recaps")
 @app_commands.choices(period=[
     app_commands.Choice(name="daily", value="daily"),
@@ -632,11 +610,10 @@ async def help_cmd(interaction: discord.Interaction):
 async def howtosetup_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(
         (
-            "To set up the bot: "
-            "- /register --> adds players"
-            "- /leaderboard --> creates a leaderboard channel"
-            "- /settime --> chooses your reset timezone"
-            "- /recap daily|weekly enable --> enables recap messages"
+            "To set up the bot: \n"
+            "- /register --> adds players\n"
+            "- /leaderboard --> creates a leaderboard channel\n"
+            "- /recap daily|weekly enable --> enables recap messages\n"
             "For more help join : https://discord.gg/vZHPkBHmkC"
         ),
         ephemeral=True,
