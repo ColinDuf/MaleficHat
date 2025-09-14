@@ -3,6 +3,8 @@ import logging
 import os
 import time
 import tracemalloc
+from collections import deque
+import threading
 from datetime import timedelta
 from pathlib import Path
 import aiohttp
@@ -31,7 +33,7 @@ from fonction_bdd import (
     set_guild_flex_mode,
     set_recap_mode,
 )
-from leaderboard_tasks import reset_lp_scheduler
+from leaderboard_tasks import reset_lp_scheduler, run_leaderboard_update_pump
 from log import DiscordLogHandler
 
 tracemalloc.start()
@@ -72,6 +74,29 @@ MATCH_CACHE_EXPIRATION = 3600  # seconds
 
 RETRY_STATUS_CODES = {502, 503, 504}
 
+# Global request counters (timestamps of each outgoing HTTP request)
+API_REQUEST_TIMESTAMPS: deque[float] = deque()
+API_REQ_LOCK = threading.Lock()
+
+def record_api_request() -> None:
+    """Record an outgoing HTTP request timestamp (thread-safe)."""
+    now = time.time()
+    with API_REQ_LOCK:
+        API_REQUEST_TIMESTAMPS.append(now)
+
+def get_api_request_counts() -> tuple[int, int]:
+    """Return (count_last_10s, count_last_60s) and prune old entries."""
+    now = time.time()
+    ten_secs_ago = now - 10
+    one_min_ago = now - 60
+    with API_REQ_LOCK:
+        # prune older than 60s
+        while API_REQUEST_TIMESTAMPS and API_REQUEST_TIMESTAMPS[0] < one_min_ago:
+            API_REQUEST_TIMESTAMPS.popleft()
+        last_60s = len(API_REQUEST_TIMESTAMPS)
+        last_10s = sum(1 for t in API_REQUEST_TIMESTAMPS if t >= ten_secs_ago)
+    return last_10s, last_60s
+
 # Mapping from reaction emoji to local music file
 MUSIC_REACTIONS = {
     "🎉": Path("music/kiffance.mp3"),
@@ -110,6 +135,8 @@ def fetch_json(url: str, headers: dict | None = None,
 
     for attempt in range(1, retries + 1):
         try:
+            # Count each actual HTTP attempt
+            record_api_request()
             resp = requests.get(url, headers=headers, timeout=10)
             if resp.status_code in RETRY_STATUS_CODES:
                 raise requests.exceptions.HTTPError(f"{resp.status_code}")
@@ -133,6 +160,8 @@ async def async_fetch_json(url: str, headers: dict | None = None,
     for attempt in range(1, retries + 1):
         try:
             async with aiohttp.ClientSession() as session:
+                # Count each actual HTTP attempt
+                record_api_request()
                 async with session.get(url, headers=headers, timeout=10) as resp:
                     if resp.status in RETRY_STATUS_CODES:
                         raise aiohttp.ClientResponseError(resp.request_info, resp.history, status=resp.status)
@@ -747,6 +776,44 @@ async def career(interaction: discord.Interaction, username: str):
             embed.add_field(name='\u200b', value='\u200b', inline=True)
     await interaction.followup.send(embed=embed)
 
+
+@tree.command(name="zadmin", description="Stats des requêtes API (toutes les 10s, fenêtre 1 minute)")
+async def zadmin(interaction: discord.Interaction):
+    """Commande admin réservée à l'ID spécifié. Met à jour toutes les 10s
+    le nombre de requêtes API effectuées et le total glissant sur 1 minute.
+    Durée d'observation: 60s (6 ticks)."""
+    OWNER_ID = 143432756825817088
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("Vous n'avez pas l'autorisation d'utiliser cette commande.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    # Initial display
+    last10, last60 = get_api_request_counts()
+    content = (
+        "ZAdmin • Monitoring des requêtes API\n"
+        f"• Sur 10s: {last10}\n"
+        f"• Sur 60s: {last60}\n"
+        "(Actualisation toutes les 10s, arrêt après 1 minute)"
+    )
+    await interaction.edit_original_response(content=content)
+
+    # Update every 10s for 1 minute
+    for _ in range(6):
+        await asyncio.sleep(10)
+        last10, last60 = get_api_request_counts()
+        content = (
+            "ZAdmin • Monitoring des requêtes API\n"
+            f"• Sur 10s: {last10}\n"
+            f"• Sur 60s: {last60}\n"
+            "(Actualisation toutes les 10s, arrêt après 1 minute)"
+        )
+        try:
+            await interaction.edit_original_response(content=content)
+        except discord.DiscordException:
+            break
+
 ###############################################################################
 # Tâches de fond
 ###############################################################################
@@ -1151,6 +1218,7 @@ async def on_ready():
     asyncio.create_task(check_for_game_completion())
     asyncio.create_task(check_username_changes())
     asyncio.create_task(reset_lp_scheduler(client))
+    asyncio.create_task(run_leaderboard_update_pump(client))
 
 
 client.run(DISCORD_TOKEN)
