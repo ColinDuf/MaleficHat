@@ -791,10 +791,12 @@ async def zadmin(interaction: discord.Interaction):
 
     # Initial display
     last10, last60 = get_api_request_counts()
+    total_ingame_players = len({puuid for puuid, _ in players_in_game})
     content = (
         "ZAdmin • Monitoring des requêtes API\n"
         f"• Sur 10s: {last10}\n"
         f"• Sur 60s: {last60}\n"
+        f"• Joueurs in-game (tous serveurs): {total_ingame_players}\n"
         "(Actualisation toutes les 10s, arrêt après 1 minute)"
     )
     await interaction.edit_original_response(content=content)
@@ -803,10 +805,12 @@ async def zadmin(interaction: discord.Interaction):
     for _ in range(6):
         await asyncio.sleep(10)
         last10, last60 = get_api_request_counts()
+        total_ingame_players = len({puuid for puuid, _ in players_in_game})
         content = (
             "ZAdmin • Monitoring des requêtes API\n"
             f"• Sur 10s: {last10}\n"
             f"• Sur 60s: {last60}\n"
+            f"• Joueurs in-game (tous serveurs): {total_ingame_players}\n"
             "(Actualisation toutes les 10s, arrêt après 1 minute)"
         )
         try:
