@@ -86,6 +86,16 @@ async def reset_lp_scheduler(bot):
         if embed.fields:
             await channel.send(embed=embed)
 
+    async def refresh_leaderboard(guild_id: int):
+        """Refresh the leaderboard message for a guild if a channel exists."""
+        guild_row = get_guild(guild_id)
+        if not guild_row:
+            return
+        channel_id = guild_row[1]
+        if channel_id is None:
+            return
+        await update_leaderboard_message(channel_id, bot, guild_id)
+
     async def daily_reset():
         while True:
             target = _next_midnight()
@@ -99,6 +109,7 @@ async def reset_lp_scheduler(bot):
                 if is_recap_enabled(guild_id, "daily"):
                     await send_recap(guild_id, "daily")
                 reset_lp_24h_for_guild(guild_id)
+                await refresh_leaderboard(guild_id)
             leaderboard_update_event.set()
 
     async def weekly_reset():
@@ -114,6 +125,7 @@ async def reset_lp_scheduler(bot):
                 if is_recap_enabled(guild_id, "weekly"):
                     await send_recap(guild_id, "weekly")
                 reset_lp_7d_for_guild(guild_id)
+                await refresh_leaderboard(guild_id)
             leaderboard_update_event.set()
 
     bot.loop.create_task(daily_reset())
