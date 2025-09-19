@@ -1,4 +1,6 @@
 import sqlite3
+from datetime import datetime
+from typing import Optional
 from discord import app_commands, Interaction
 
 DB_PATH = "Backend/database.db"
@@ -159,6 +161,32 @@ def update_player_global(puuid: str,
     conn = get_connection()
     c = conn.cursor()
     c.execute(query, tuple(params))
+    conn.commit()
+    conn.close()
+
+
+def update_player_status(puuid: str,
+                         status: str,
+                         status_time: Optional[datetime] = None) -> None:
+    """Update the live status (in game/in queue/offline) for a given player."""
+
+    allowed_status = {"in_game", "in_queue", "offline"}
+    if status not in allowed_status:
+        raise ValueError(f"Statut '{status}' invalide.")
+
+    timestamp = status_time.isoformat(timespec="seconds") if status_time else None
+
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        """
+        UPDATE player
+        SET current_game_status = ?,
+            current_game_updated_at = COALESCE(?, CURRENT_TIMESTAMP)
+        WHERE puuid = ?
+        """,
+        (status, timestamp, puuid),
+    )
     conn.commit()
     conn.close()
 

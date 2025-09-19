@@ -3,6 +3,17 @@ import sqlite3
 
 DB_PATH = "Backend/database.db"
 
+def ensure_columns(cursor, table_name: str, columns) -> None:
+    """Add missing columns to an existing table without dropping data."""
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+
+    for column_name, column_definition in columns.items():
+        if column_name not in existing_columns:
+            cursor.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"
+            )
+
 def create_db():
     logging.info("Starting DB creation...")
     conn = sqlite3.connect(DB_PATH)
@@ -32,10 +43,21 @@ def create_db():
             flex_lp INTEGER,
             lp_24h INTEGER,
             lp_7d INTEGER,
+            current_game_status TEXT DEFAULT 'offline',
+            current_game_updated_at DATETIME,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         """)
+
+    ensure_columns(
+        c,
+        "player",
+        {
+            "current_game_status": "TEXT DEFAULT 'offline'",
+            "current_game_updated_at": "DATETIME"
+        },
+    )
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS player_guild (
