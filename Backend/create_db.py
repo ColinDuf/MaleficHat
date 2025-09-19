@@ -26,9 +26,18 @@ def create_db():
             leaderboard_channel_id INTEGER,
             flex_enabled INTEGER DEFAULT 0,
             daily_recap_enabled INTEGER DEFAULT 0,
-            weekly_recap_enabled INTEGER DEFAULT 0
+            weekly_recap_enabled INTEGER DEFAULT 0,
+            name TEXT
         );
         """)
+
+    ensure_columns(
+        c,
+        "guild",
+        {
+            "name": "TEXT"
+        },
+    )
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS player (

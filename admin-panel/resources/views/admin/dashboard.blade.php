@@ -104,6 +104,67 @@
             color: rgba(226, 232, 240, 0.85);
         }
 
+        .sort-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            color: inherit;
+            text-decoration: none;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+
+        .sort-link .sort-indicator {
+            font-size: 0.75rem;
+            opacity: 0.6;
+        }
+
+        .sort-link.is-active {
+            color: rgba(248, 250, 252, 0.95);
+        }
+
+        .sort-link.is-active .sort-indicator {
+            opacity: 0.9;
+        }
+
+        .sort-link:not(.is-active):hover .sort-indicator {
+            opacity: 0.8;
+        }
+
+        .player-info strong {
+            display: block;
+        }
+
+        .puuid-toggle {
+            margin-top: 0.4rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 8px;
+            border: 1px solid rgba(99, 102, 241, 0.45);
+            background: rgba(99, 102, 241, 0.12);
+            color: rgba(191, 219, 254, 0.95);
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            cursor: pointer;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+        }
+
+        .puuid-toggle:hover {
+            background: rgba(99, 102, 241, 0.22);
+            border-color: rgba(99, 102, 241, 0.65);
+        }
+
+        .player-puuid {
+            display: block;
+            margin-top: 0.35rem;
+            color: rgba(148, 163, 184, 0.8);
+            word-break: break-all;
+        }
+
+        .player-puuid[hidden] {
+            display: none !important;
+        }
+
         .table-wrapper {
             margin-top: 2.5rem;
             overflow-x: auto;
@@ -158,11 +219,6 @@
             color: rgb(74, 222, 128);
         }
 
-        .status-badge[data-status="in_queue"] {
-            background: rgba(250, 204, 21, 0.12);
-            color: rgb(250, 204, 21);
-        }
-
         .status-badge[data-status="offline"] {
             background: rgba(148, 163, 184, 0.14);
             color: rgba(203, 213, 225, 0.95);
@@ -202,134 +258,244 @@
     </style>
 
     <header>
-        <h1>Panel administrateur</h1>
-        <p class="lead">Visualisez les joueurs suivis par MaleficHat, surveillez l'activité en direct et appliquez des filtres précis pour retrouver rapidement une personne ou un groupe.</p>
+        <h1>Admin Dashboard</h1>
+        <p class="lead">View the players tracked by MaleficHat, monitor live activity, and apply precise filters to quickly locate a person or group.</p>
     </header>
 
     <section class="grid stats">
         <article class="card stat-card">
-            <span class="label">Total joueurs</span>
+            <span class="label">Total Players</span>
             <h2>{{ number_format($stats['total_players']) }}</h2>
         </article>
         <article class="card stat-card">
-            <span class="label">En game</span>
+            <span class="label">In Game</span>
             <h2>{{ number_format($stats['players_in_game']) }}</h2>
         </article>
         <article class="card stat-card">
-            <span class="label">En file</span>
-            <h2>{{ number_format($stats['players_in_queue']) }}</h2>
-        </article>
-        <article class="card stat-card">
-            <span class="label">Mise à jour</span>
+            <span class="label">Last Update</span>
             <h2>{{ $stats['updated_at']->diffForHumans() }}</h2>
         </article>
     </section>
 
     <form method="GET" action="{{ route('admin.dashboard') }}" class="card filters-form">
+        <input type="hidden" name="sort" value="{{ $filters['sort'] ?? 'recent' }}">
+        <input type="hidden" name="direction" value="{{ $filters['direction'] ?? 'desc' }}">
         <div class="grid">
             <div>
-                <label for="search">Recherche</label>
-                <input type="text" id="search" name="search" placeholder="Pseudo, PUUID, région…" value="{{ $filters['search'] ?? '' }}">
+                <label for="search">Search</label>
+                <input type="text" id="search" name="search" placeholder="Player, PUUID, region..." value="{{ $filters['search'] ?? '' }}">
             </div>
             <div>
-                <label for="region">Région</label>
+                <label for="region">Region</label>
                 <select id="region" name="region">
-                    <option value="">Toutes</option>
+                    <option value="">All</option>
                     @foreach ($regions as $region)
                         <option value="{{ $region }}" @selected(($filters['region'] ?? '') === $region)>{{ strtoupper($region) }}</option>
                     @endforeach
                 </select>
             </div>
             <div>
-                <label for="tier">Rang (solo)</label>
+                <label for="tier">Rank (solo)</label>
                 <select id="tier" name="tier">
-                    <option value="">Tous</option>
+                    <option value="">All</option>
                     @foreach ($tiers as $tier)
-                        <option value="{{ $tier }}" @selected(($filters['tier'] ?? '') === $tier)>{{ ucfirst(strtolower($tier)) }}</option>
+                        <option value="{{ $tier['value'] }}" @selected(($filters['tier'] ?? '') === $tier['value'])>{{ $tier['label'] }}</option>
                     @endforeach
                 </select>
             </div>
             <div>
-                <label for="status">Statut</label>
+                <label for="status">Status</label>
                 <select id="status" name="status">
-                    <option value="">Tous</option>
-                    <option value="in_game" @selected(($filters['status'] ?? '') === 'in_game')>En game</option>
-                    <option value="in_queue" @selected(($filters['status'] ?? '') === 'in_queue')>En file</option>
-                    <option value="offline" @selected(($filters['status'] ?? '') === 'offline')>Hors ligne</option>
+                    <option value="">All</option>
+                    <option value="in_game" @selected(($filters['status'] ?? '') === 'in_game')>In Game</option>
+                    <option value="offline" @selected(($filters['status'] ?? '') === 'offline')>Offline</option>
                 </select>
             </div>
             <div>
-                <label for="guild_id">Serveur Discord</label>
+                <label for="guild_id">Discord Server</label>
                 <select id="guild_id" name="guild_id">
-                    <option value="">Tous</option>
+                    <option value="">All</option>
                     @foreach ($guilds as $guild)
+                        @php
+                            $guildLabel = $guild->name ?: ('#' . $guild->guild_id);
+                        @endphp
                         <option value="{{ $guild->guild_id }}" @selected(($filters['guild_id'] ?? null) == $guild->guild_id)>
-                            #{{ $guild->guild_id }}
+                            {{ $guildLabel }}
                         </option>
                     @endforeach
                 </select>
             </div>
-            <div>
-                <label for="sort">Tri</label>
-                <select id="sort" name="sort">
-                    <option value="recent" @selected(($filters['sort'] ?? 'recent') === 'recent')>Dernière mise à jour</option>
-                    <option value="name" @selected(($filters['sort'] ?? '') === 'name')>Pseudo</option>
-                    <option value="lp" @selected(($filters['sort'] ?? '') === 'lp')>LP</option>
-                    <option value="tier" @selected(($filters['sort'] ?? '') === 'tier')>Tier</option>
-                </select>
-            </div>
-            <div>
-                <label for="direction">Ordre</label>
-                <select id="direction" name="direction">
-                    <option value="desc" @selected(($filters['direction'] ?? 'desc') === 'desc')>Décroissant</option>
-                    <option value="asc" @selected(($filters['direction'] ?? 'desc') === 'asc')>Croissant</option>
-                </select>
-            </div>
         </div>
         <div class="actions">
-            <a href="{{ route('admin.dashboard') }}" class="reset">Réinitialiser</a>
-            <button type="submit">Appliquer</button>
+            <a href="{{ route('admin.dashboard') }}" class="reset">Reset</a>
         </div>
     </form>
 
     <div class="table-wrapper card">
+        @php
+            $currentSort = $filters['sort'] ?? 'recent';
+            $currentDirection = $filters['direction'] ?? 'desc';
+
+            $sortMeta = function (string $field, string $defaultDirection = 'asc') use ($currentSort, $currentDirection) {
+                $isActive = $currentSort === $field;
+                $nextDirection = $isActive
+                    ? ($currentDirection === 'asc' ? 'desc' : 'asc')
+                    : $defaultDirection;
+
+                $url = request()->fullUrlWithQuery([
+                    'sort' => $field,
+                    'direction' => $nextDirection,
+                    'page' => null,
+                ]);
+
+                return [
+                    'url' => $url,
+                    'isActive' => $isActive,
+                    'direction' => $isActive ? $currentDirection : null,
+                ];
+            };
+
+            $playerSort = $sortMeta('name', 'asc');
+            $statusSort = $sortMeta('status', 'asc');
+            $rankSort = $sortMeta('rank', 'desc');
+            $lpSort = $sortMeta('lp', 'desc');
+            $regionSort = $sortMeta('region', 'asc');
+            $guildSort = $sortMeta('guilds', 'desc');
+            $recentSort = $sortMeta('recent', 'desc');
+            $statusUpdatedSort = $sortMeta('status_updated', 'desc');
+        @endphp
+
         <table>
             <thead>
                 <tr>
-                    <th>Joueur</th>
-                    <th>Région</th>
-                    <th>Rang</th>
-                    <th>LP</th>
-                    <th>Statut</th>
-                    <th>Guildes suivies</th>
-                    <th>Maj globale</th>
-                    <th>Maj statut</th>
+                    <th>
+                        <a href="{{ $playerSort['url'] }}" class="sort-link{{ $playerSort['isActive'] ? ' is-active' : '' }}">
+                            Player
+                            <span class="sort-indicator">
+                                @if ($playerSort['isActive'])
+                                    {{ $playerSort['direction'] === 'asc' ? '↑' : '↓' }}
+                                @else
+                                    ↕
+                                @endif
+                            </span>
+                        </a>
+                    </th>
+                    <th>
+                        <a href="{{ $statusSort['url'] }}" class="sort-link{{ $statusSort['isActive'] ? ' is-active' : '' }}">
+                            Status
+                            <span class="sort-indicator">
+                                @if ($statusSort['isActive'])
+                                    {{ $statusSort['direction'] === 'asc' ? '↑' : '↓' }}
+                                @else
+                                    ↕
+                                @endif
+                            </span>
+                        </a>
+                    </th>
+                    <th>
+                        <a href="{{ $rankSort['url'] }}" class="sort-link{{ $rankSort['isActive'] ? ' is-active' : '' }}">
+                            Rank
+                            <span class="sort-indicator">
+                                @if ($rankSort['isActive'])
+                                    {{ $rankSort['direction'] === 'asc' ? '↑' : '↓' }}
+                                @else
+                                    ↕
+                                @endif
+                            </span>
+                        </a>
+                    </th>
+                    <th>
+                        <a href="{{ $lpSort['url'] }}" class="sort-link{{ $lpSort['isActive'] ? ' is-active' : '' }}">
+                            LP
+                            <span class="sort-indicator">
+                                @if ($lpSort['isActive'])
+                                    {{ $lpSort['direction'] === 'asc' ? '↑' : '↓' }}
+                                @else
+                                    ↕
+                                @endif
+                            </span>
+                        </a>
+                    </th>
+                    <th>
+                        <a href="{{ $regionSort['url'] }}" class="sort-link{{ $regionSort['isActive'] ? ' is-active' : '' }}">
+                            Region
+                            <span class="sort-indicator">
+                                @if ($regionSort['isActive'])
+                                    {{ $regionSort['direction'] === 'asc' ? '↑' : '↓' }}
+                                @else
+                                    ↕
+                                @endif
+                            </span>
+                        </a>
+                    </th>
+                    <th>
+                        <a href="{{ $guildSort['url'] }}" class="sort-link{{ $guildSort['isActive'] ? ' is-active' : '' }}">
+                            Tracked Guilds
+                            <span class="sort-indicator">
+                                @if ($guildSort['isActive'])
+                                    {{ $guildSort['direction'] === 'asc' ? '↑' : '↓' }}
+                                @else
+                                    ↕
+                                @endif
+                            </span>
+                        </a>
+                    </th>
+                    <th>
+                        <a href="{{ $recentSort['url'] }}" class="sort-link{{ $recentSort['isActive'] ? ' is-active' : '' }}">
+                            Profile Updated
+                            <span class="sort-indicator">
+                                @if ($recentSort['isActive'])
+                                    {{ $recentSort['direction'] === 'asc' ? '↑' : '↓' }}
+                                @else
+                                    ↕
+                                @endif
+                            </span>
+                        </a>
+                    </th>
+                    <th>
+                        <a href="{{ $statusUpdatedSort['url'] }}" class="sort-link{{ $statusUpdatedSort['isActive'] ? ' is-active' : '' }}">
+                            Status Updated
+                            <span class="sort-indicator">
+                                @if ($statusUpdatedSort['isActive'])
+                                    {{ $statusUpdatedSort['direction'] === 'asc' ? '↑' : '↓' }}
+                                @else
+                                    ↕
+                                @endif
+                            </span>
+                        </a>
+                    </th>
                 </tr>
             </thead>
             <tbody>
                 @forelse ($players as $player)
                     <tr>
-                        <td>
-                            <strong>{{ $player->username }}</strong><br>
-                            <small style="color: rgba(148, 163, 184, 0.8);">{{ $player->puuid }}</small>
+                        <td class="player-info">
+                            <strong>{{ $player->username }}</strong>
+                            @php
+                                $puuidElementId = 'puuid-' . $loop->iteration;
+                            @endphp
+                            <button type="button" class="puuid-toggle" data-target="{{ $puuidElementId }}">Show PUUID</button>
+                            <small id="{{ $puuidElementId }}" class="player-puuid" hidden>{{ $player->puuid }}</small>
                         </td>
-                        <td>{{ strtoupper($player->region ?? 'n/a') }}</td>
-                        <td>{{ ucfirst(strtolower($player->tier ?? '')) }} {{ $player->rank }}</td>
-                        <td>{{ number_format($player->lp ?? 0) }}</td>
                         <td>
                             <span class="status-badge" data-status="{{ $player->current_game_status ?? 'offline' }}">
                                 {{ match ($player->current_game_status) {
-                                    'in_game'  => 'En game',
-                                    'in_queue' => 'En file',
-                                    default    => 'Hors ligne',
+                                    'in_game' => 'In Game',
+                                    default   => 'Offline',
                                 } }}
                             </span>
                         </td>
+                        <td>{{ $player->rank }} {{ strtoupper($player->tier ?? '') }}</td>
+                        <td>{{ number_format($player->lp ?? 0) }}</td>
+                        <td>{{ strtoupper($player->region ?? 'n/a') }}</td>
                         <td>
                             @forelse ($player->guilds as $guild)
-                                <span class="guild-pill">#{{ $guild->guild_id }}</span>
+                                @php
+                                    $guildLabel = $guild->name ?: ('#' . $guild->guild_id);
+                                @endphp
+                                <span class="guild-pill" title="#{{ $guild->guild_id }}">{{ $guildLabel }}</span>
                             @empty
-                                <span style="color: rgba(148, 163, 184, 0.8);">Non liée</span>
+                                <span style="color: rgba(148, 163, 184, 0.8);">Not linked</span>
                             @endforelse
                         </td>
                         <td>{{ optional($player->updated_at)->diffForHumans() ?? '—' }}</td>
@@ -339,7 +505,7 @@
                     <tr>
                         <td colspan="8">
                             <div class="empty-state">
-                                Aucun joueur ne correspond aux filtres sélectionnés. Modifiez votre recherche ou réinitialisez les filtres.
+                                No players match the selected filters. Adjust your search or reset the filters.
                             </div>
                         </td>
                     </tr>
@@ -351,4 +517,65 @@
             {{ $players->links() }}
         </div>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            document.addEventListener('click', function (event) {
+                const toggle = event.target.closest('.puuid-toggle');
+                if (!toggle) {
+                    return;
+                }
+
+                const targetId = toggle.getAttribute('data-target');
+                const target = document.getElementById(targetId);
+                if (!target) {
+                    return;
+                }
+
+                const isHidden = target.hasAttribute('hidden');
+                if (isHidden) {
+                    target.removeAttribute('hidden');
+                    toggle.textContent = 'Hide PUUID';
+                } else {
+                    target.setAttribute('hidden', 'hidden');
+                    toggle.textContent = 'Show PUUID';
+                }
+            });
+
+            const filtersForm = document.querySelector('.filters-form');
+            if (!filtersForm) {
+                return;
+            }
+
+            const submitForm = () => {
+                if (typeof filtersForm.requestSubmit === 'function') {
+                    filtersForm.requestSubmit();
+                } else {
+                    filtersForm.submit();
+                }
+            };
+
+            const debounce = (fn, delay = 500) => {
+                let timeoutId;
+                return (...args) => {
+                    clearTimeout(timeoutId);
+                    timeoutId = setTimeout(() => fn(...args), delay);
+                };
+            };
+
+            const submitWithDebounce = debounce(submitForm, 500);
+
+            filtersForm.querySelectorAll('select').forEach((select) => {
+                select.addEventListener('change', submitForm);
+            });
+
+            const searchInput = filtersForm.querySelector('input[name="search"]');
+            if (searchInput) {
+                searchInput.addEventListener('input', submitWithDebounce);
+            }
+
+            const autoRefreshIntervalMs = 60000;
+            setInterval(submitForm, autoRefreshIntervalMs);
+        });
+    </script>
 @endsection

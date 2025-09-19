@@ -30,8 +30,8 @@ from fonction_bdd import (
     get_leaderboard_by_guild,
     delete_leaderboard_member,
     count_players,
-    set_guild_flex_mode,
     set_recap_mode,
+    update_player_status,
 )
 from leaderboard_tasks import reset_lp_scheduler, run_leaderboard_update_pump
 from log import DiscordLogHandler
@@ -482,8 +482,7 @@ async def register(
     guild_id = interaction.guild.id
     channel_id = interaction.channel.id
 
-    if not get_guild(guild_id):
-        insert_guild(guild_id, None, 0)
+    insert_guild(guild_id, name=interaction.guild.name)
 
     if get_player(puuid, guild_id):
         return await interaction.followup.send(
@@ -591,14 +590,13 @@ async def unregister(interaction: discord.Interaction, username: str):
 ])
 async def flex(interaction: discord.Interaction, mode: str):
     guild_id = interaction.guild.id
-    row = get_guild(guild_id)
-
     enable = mode.lower() == "enable"
 
-    if row is None:
-        insert_guild(guild_id, None, 1 if enable else 0)
-    else:
-        set_guild_flex_mode(guild_id, enable)
+    insert_guild(
+        guild_id,
+        flex_enabled=1 if enable else 0,
+        name=interaction.guild.name,
+    )
 
     await interaction.response.send_message(
         f"Flex mode {'enabled' if enable else 'disabled'}.",
@@ -848,6 +846,8 @@ async def check_ingame():
                 player_key = (puuid, guild_id)
 
                 if champion_id is not None and player_key not in players_in_game:
+                    await asyncio.to_thread(update_player_status, puuid, "in_game")
+
                     champion_name = CHAMPION_MAPPING.get(champion_id)
                     if champion_name:
                         version = get_ddragon_latest_version()
@@ -856,7 +856,9 @@ async def check_ingame():
                             f"{version}/img/champion/{champion_name}.png"
                         )
                     else:
-                        logging.warning(f"[check_ingame] Unknown champion ID {champion_id} in CHAMPION_MAPPING.")
+                        logging.warning(
+                            f"[check_ingame] Unknown champion ID {champion_id} in CHAMPION_MAPPING."
+                        )
                         champion_image_url = None
 
                     embed = discord.Embed(
@@ -870,19 +872,18 @@ async def check_ingame():
                     if champion_image_url:
                         embed.set_thumbnail(url=champion_image_url)
 
+                    msg = None
                     try:
                         msg = await channel.send(embed=embed)
                     except discord.Forbidden:
                         logging.warning(
                             f"[check_ingame] Missing access to channel {channel_id}."
                         )
-                        msg = None
-
                     except discord.DiscordException as e:
                         logging.error(f"[check_ingame] Failed to send in-game embed: {e}")
-                        msg = None
+
+                    players_in_game.add(player_key)
                     if msg:
-                        players_in_game.add(player_key)
                         players_in_game_messages[player_key] = msg
 
                     # Don't remove the player here. The check_for_game_completion task
@@ -923,6 +924,7 @@ async def check_for_game_completion():
                 if not row:
                     players_in_game.discard(player_key)
                     players_in_game_messages.pop(player_key, None)
+                    await asyncio.to_thread(update_player_status, player_key[0], "offline")
                     continue
 
                 (
@@ -1070,6 +1072,7 @@ async def check_for_game_completion():
                     await leaderboard.update_leaderboard_message(lb_channel_id, client, guild_id)
 
                 players_in_game.discard(player_key)
+                await asyncio.to_thread(update_player_status, puuid, "offline")
                 logging.info(
                     f"[MATCH FINISHED] {username}: "
                     f"Old LP: {old_lp} New LP: {new_lp} Difference: {lp_change}"

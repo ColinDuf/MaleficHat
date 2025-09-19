@@ -54,6 +54,31 @@ def set_recap_mode(guild_id: int, period: str, enabled: bool) -> None:
     conn.close()
 
 
+def set_guild_name_if_missing(guild_id: int, name: str) -> None:
+    """Ensure a guild row has a name; fill it only when empty."""
+
+    cleaned_name = (name or "").strip()
+    if not cleaned_name:
+        return
+
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        """
+        INSERT INTO guild (guild_id, name)
+        VALUES (?, ?)
+        ON CONFLICT(guild_id) DO UPDATE SET
+            name = CASE
+                WHEN guild.name IS NULL OR guild.name = '' THEN excluded.name
+                ELSE guild.name
+            END
+        """,
+        (guild_id, cleaned_name),
+    )
+    conn.commit()
+    conn.close()
+
+
 def insert_player(puuid: str,
                   username: str,
                   tier: str,
@@ -336,29 +361,34 @@ async def username_autocomplete(interaction: Interaction, current: str):
 
 # ----- Opérations sur la table guild -----
 
-def insert_guild(guild_id: int,
-                 leaderboard_channel_id: int | None,
-                 flex_enabled: int | None = 0):
-    """Insert or update guild configuration.
+def insert_guild(
+        guild_id: int,
+        leaderboard_channel_id: int | None = None,
+        flex_enabled: int | None = None,
+        name: str | None = None,
+):
+    """Ensure a guild row exists and update provided settings.
 
-    Uses ``INSERT OR IGNORE`` followed by an ``UPDATE`` so that existing
-    rows aren't replaced, which previously could violate foreign key
-    constraints for related tables.
+    The function performs an ``INSERT OR IGNORE`` followed by a targeted
+    ``UPDATE`` for the provided fields so that we never clobber unrelated
+    columns.
     """
+
     conn = get_connection()
     c = conn.cursor()
 
-    # Ensure a row exists for this guild
+    # Ensure a row exists for this guild. When flex_enabled is ``None``
+    # we still default the value to 0 for fresh rows.
     c.execute(
         """
-        INSERT OR IGNORE INTO guild (guild_id, leaderboard_channel_id, flex_enabled)
-        VALUES (?, ?, COALESCE(?, 0))
+        INSERT OR IGNORE INTO guild (guild_id, leaderboard_channel_id, flex_enabled, name)
+        VALUES (?, ?, COALESCE(?, 0), ?)
         """,
-        (guild_id, leaderboard_channel_id, flex_enabled),
+        (guild_id, leaderboard_channel_id, flex_enabled, name),
     )
 
     # Update provided fields without clobbering existing data
-    updates = []
+    updates: list[str] = []
     params: list[object] = []
     if leaderboard_channel_id is not None:
         updates.append("leaderboard_channel_id = ?")
@@ -366,6 +396,9 @@ def insert_guild(guild_id: int,
     if flex_enabled is not None:
         updates.append("flex_enabled = ?")
         params.append(flex_enabled)
+    if name is not None:
+        updates.append("name = ?")
+        params.append(name)
     if updates:
         params.append(guild_id)
         c.execute(
@@ -392,7 +425,7 @@ def get_guild(guild_id: int):
     conn = get_connection()
     c = conn.cursor()
     c.execute(
-        "SELECT guild_id, leaderboard_channel_id, flex_enabled FROM guild WHERE guild_id = ?",
+        "SELECT guild_id, leaderboard_channel_id, flex_enabled, name FROM guild WHERE guild_id = ?",
         (guild_id,)
     )
     result = c.fetchone()

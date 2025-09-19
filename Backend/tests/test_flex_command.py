@@ -20,31 +20,26 @@ def bot_module():
 def test_flex_command_enable(bot_module):
     interaction = MagicMock()
     interaction.guild.id = 1
+    interaction.guild.name = "Guild One"
     interaction.response.send_message = AsyncMock()
 
     with (
-        patch.object(bot_module, 'get_guild', return_value=None),
         patch.object(bot_module, 'insert_guild') as ins_guild,
-        patch.object(bot_module, 'set_guild_flex_mode') as set_flex,
     ):
         asyncio.run(bot_module.flex.callback(interaction, 'enable'))
 
-    ins_guild.assert_called_once_with(1, None, 1)
-    set_flex.assert_not_called()
+    ins_guild.assert_called_once_with(1, flex_enabled=1, name="Guild One")
     interaction.response.send_message.assert_awaited_once()
 
 
 def test_flex_command_disable(bot_module):
     interaction = MagicMock()
     interaction.guild.id = 2
+    interaction.guild.name = "Guild Two"
     interaction.response.send_message = AsyncMock()
 
-    with (
-        patch.object(bot_module, 'get_guild', return_value=(2, None, 1)),
-        patch.object(bot_module, 'set_guild_flex_mode') as set_flex,
-    ):
+    with patch.object(bot_module, 'insert_guild') as ins_guild:
         asyncio.run(bot_module.flex.callback(interaction, 'disable'))
 
-    set_flex.assert_called_once_with(2, False)
+    ins_guild.assert_called_once_with(2, flex_enabled=0, name="Guild Two")
     interaction.response.send_message.assert_awaited_once()
-

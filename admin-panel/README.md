@@ -84,7 +84,7 @@ from Backend.fonction_bdd import update_player_status
 update_player_status(puuid, "in_game")
 ```
 
-Statuts disponibles : `in_game`, `in_queue`, `offline`. Le champ `current_game_updated_at` est rempli avec l'heure courante si aucun horodatage n'est fourni.
+Statuts disponibles : `in_game`, `offline`. Le champ `current_game_updated_at` est rempli avec l'heure courante si aucun horodatage n'est fourni.
 
 Mettez à jour ce statut lorsque vous détectez l'entrée / la sortie de partie (par exemple via vos tâches de scraping Riot). Le tableau de bord comptera automatiquement les joueurs `in_game`.
 
@@ -97,7 +97,7 @@ php artisan serve
 
 Ouvrez `http://127.0.0.1:8000/admin` et connectez-vous. Vous verrez :
 
-- les statistiques en tête de page (total, en game, en file) ;
+- les statistiques en tête de page (total, en game) ;
 - un formulaire de filtre ;
 - un tableau paginé (25 joueurs / page) avec guildes, statut, LP, timestamp des mises à jour.
 

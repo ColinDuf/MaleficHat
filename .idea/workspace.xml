@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="4848f10a-5a74-4a85-9ac4-3f30e46950c7" name="Changes" comment="MAC">
+      <change afterPath="$PROJECT_DIR$/admin-panel/.editorconfig" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/.env.example" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/.gitattributes" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/app/Http/Controllers/Admin/AdminDashboardController.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/app/Http/Controllers/Controller.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/app/Models/Guild.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/app/Models/Player.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/app/Models/PlayerGuild.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/app/Models/User.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/app/Providers/AppServiceProvider.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/artisan" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/bootstrap/app.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/bootstrap/cache/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/bootstrap/providers.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/composer.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/composer.lock" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/config/app.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/config/auth.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/config/cache.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/config/database.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/config/filesystems.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/config/logging.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/config/mail.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/config/queue.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/config/services.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/config/session.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/database/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/database/factories/UserFactory.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/database/migrations/0001_01_01_000000_create_users_table.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/database/migrations/0001_01_01_000001_create_cache_table.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/database/migrations/0001_01_01_000002_create_jobs_table.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/database/migrations/2024_03_05_000000_add_current_game_status_to_player_table.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/database/seeders/DatabaseSeeder.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/package-lock.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/package.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/phpunit.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/public/.htaccess" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/public/favicon.ico" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/public/index.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/public/robots.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/resources/css/app.css" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/resources/js/app.js" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/resources/js/bootstrap.js" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/resources/views/admin/dashboard.blade.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/resources/views/layouts/admin.blade.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/resources/views/welcome.blade.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/routes/admin.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/routes/console.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/routes/web.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/storage/app/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/storage/app/private/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/storage/app/public/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/storage/framework/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/storage/framework/cache/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/storage/framework/cache/data/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/storage/framework/sessions/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/storage/framework/testing/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/storage/framework/views/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/storage/logs/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/tests/Feature/ExampleTest.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/tests/TestCase.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/tests/Unit/ExampleTest.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/admin-panel/vite.config.js" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/laravel-admin/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/laravel-admin/app/Http/Controllers/Admin/AdminDashboardController.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/laravel-admin/app/Models/Guild.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/laravel-admin/app/Models/Player.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/laravel-admin/app/Models/PlayerGuild.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/laravel-admin/app/Providers/RouteServiceProvider.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/laravel-admin/database/migrations/2024_03_05_000000_add_current_game_status_to_player_table.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/laravel-admin/package-lock.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/laravel-admin/resources/views/admin/dashboard.blade.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/laravel-admin/resources/views/layouts/admin.blade.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/laravel-admin/routes/admin.php" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/bot.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/bot.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/create_db.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/create_db.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/database.db" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/database.db" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/fonction_bdd.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/fonction_bdd.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/leaderboard.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/leaderboard.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Backend/tests/test_flex_command.py" beforeDir="false" afterPath="$PROJECT_DIR$/Backend/tests/test_flex_command.py" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+        <option value="HTML File" />
+        <option value="JavaScript File" />
+      </list>
+    </option>
+  </component>
+  <component name="FlaskConsoleOptions" custom-start-script="import sys; print('Python %s on %s' % (sys.version, sys.platform)); sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;from flask.cli import ScriptInfo, NoAppException&#10;for module in [&quot;main.py&quot;, &quot;wsgi.py&quot;, &quot;app.py&quot;]:&#10;    try: locals().update(ScriptInfo(app_import_path=module, create_app=None).load_app().make_shell_context()); print(&quot;\nFlask App: %s&quot; % app.import_name); break&#10;    except NoAppException: pass">
+    <envs>
+      <env key="FLASK_APP" value="app" />
+    </envs>
+    <option name="myCustomStartScript" value="import sys; print('Python %s on %s' % (sys.version, sys.platform)); sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;from flask.cli import ScriptInfo, NoAppException&#10;for module in [&quot;main.py&quot;, &quot;wsgi.py&quot;, &quot;app.py&quot;]:&#10;    try: locals().update(ScriptInfo(app_import_path=module, create_app=None).load_app().make_shell_context()); print(&quot;\nFlask App: %s&quot; % app.import_name); break&#10;    except NoAppException: pass" />
+    <option name="myEnvs">
+      <map>
+        <entry key="FLASK_APP" value="app" />
+      </map>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;ColinDuf&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/ColinDuf/MaleficHat.git&quot;,
+    &quot;accountId&quot;: &quot;6f655e35-2388-4e8a-969b-6887b698fcc8&quot;
+  }
+}</component>
+  <component name="HighlightingSettingsPerFile">
+    <setting file="file://$PROJECT_DIR$/Backend/leaderboard.py" root0="FORCE_HIGHLIGHTING" />
+  </component>
+  <component name="MigrationScriptOptions">
+    <option name="ignoreImplicitObjects" value="true" />
+    <option name="ignoreSourceCode" value="false" />
+  </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="CurrentFile" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 7
+}</component>
+  <component name="ProjectId" id="2rL4SGZGpdwlhcrafngRjAscizt" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;DefaultHtmlFileTemplate&quot;: &quot;HTML File&quot;,
+    &quot;Python.Bot.executor&quot;: &quot;Run&quot;,
+    &quot;Python.app.executor&quot;: &quot;Run&quot;,
+    &quot;Python.bot.executor&quot;: &quot;Run&quot;,
+    &quot;Python.create_db.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fonction_bdd.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/Users/colinduf/Desktop/MaleficHat&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;project.structure.last.edited&quot;: &quot;Modules&quot;,
+    &quot;project.structure.proportion&quot;: &quot;0.0&quot;,
+    &quot;project.structure.side.proportion&quot;: &quot;0.0&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;advanced.settings&quot;,
+    &quot;ts.external.directory.path&quot;: &quot;/Applications/PyCharm.app/Contents/plugins/javascript-plugin/jsLanguageServicesImpl/external&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  },
+  &quot;keyToStringList&quot;: {
+    &quot;DatabaseDriversLRU&quot;: [
+      &quot;sqlite&quot;
+    ]
+  }
+}</component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/Backend" />
+      <recent name="$PROJECT_DIR$" />
+    </key>
+  </component>
+  <component name="RunManager">
+    <configuration name="Bot" type="PythonConfigurationType" factoryName="Python">
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <module name="" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/Backend/bot.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-jdk-9f38398b9061-39b83d9b5494-intellij.indexing.shared.core-IU-241.17011.79" />
+        <option value="bundled-js-predefined-1d06a55b98c1-0b3e54e931b4-JavaScript-IU-241.17011.79" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="4848f10a-5a74-4a85-9ac4-3f30e46950c7" name="Changes" comment="" />
+      <created>1736325021405</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1736325021405</updated>
+      <workItem from="1736325022764" duration="10719000" />
+      <workItem from="1742303106812" duration="12000" />
+      <workItem from="1742303586381" duration="923000" />
+      <workItem from="1742458140492" duration="12879000" />
+      <workItem from="1742507543613" duration="48000" />
+      <workItem from="1742542375270" duration="82000" />
+      <workItem from="1744615954089" duration="3503000" />
+      <workItem from="1747999426645" duration="1844000" />
+      <workItem from="1750324310931" duration="350000" />
+      <workItem from="1754772303619" duration="2611000" />
+      <workItem from="1754857181412" duration="7031000" />
+      <workItem from="1755205032796" duration="2994000" />
+      <workItem from="1755287112118" duration="1161000" />
+      <workItem from="1755290070436" duration="958000" />
+      <workItem from="1755351399372" duration="2044000" />
+      <workItem from="1755373275282" duration="1260000" />
+      <workItem from="1755375827728" duration="2514000" />
+      <workItem from="1755593265318" duration="8000" />
+      <workItem from="1757319081487" duration="316000" />
+      <workItem from="1757319970961" duration="1048000" />
+      <workItem from="1757321927024" duration="105000" />
+      <workItem from="1757322082725" duration="156000" />
+      <workItem from="1757324786907" duration="48000" />
+      <workItem from="1757329567340" duration="1424000" />
+      <workItem from="1757337385378" duration="391000" />
+      <workItem from="1757338032163" duration="648000" />
+      <workItem from="1757401603607" duration="5395000" />
+      <workItem from="1757421256581" duration="45000" />
+      <workItem from="1757924961210" duration="44000" />
+      <workItem from="1757925010576" duration="377000" />
+      <workItem from="1757925603251" duration="1954000" />
+      <workItem from="1757938272800" duration="1516000" />
+      <workItem from="1758090622095" duration="956000" />
+      <workItem from="1758271051996" duration="770000" />
+      <workItem from="1758274526422" duration="122000" />
+      <workItem from="1758285283346" duration="220000" />
+    </task>
+    <task id="LOCAL-00001" summary="Add requierements.txt">
+      <option name="closed" value="true" />
+      <created>1742458332349</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1742458332349</updated>
+    </task>
+    <task id="LOCAL-00002" summary="Swap JSON to BDD">
+      <option name="closed" value="true" />
+      <created>1742483792795</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1742483792795</updated>
+    </task>
+    <task id="LOCAL-00003" summary="Start admin panel on web">
+      <option name="closed" value="true" />
+      <created>1755593151882</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1755593151882</updated>
+    </task>
+    <task id="LOCAL-00004" summary="MAC">
+      <option name="closed" value="true" />
+      <created>1757421295043</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1757421295043</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="UnknownFeatures">
+    <option featureType="com.intellij.fileTypeFactory" implementationName=".env" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Add requierements.txt" />
+    <MESSAGE value="Swap JSON to BDD" />
+    <MESSAGE value="Start admin panel on web" />
+    <MESSAGE value="MAC" />
+    <option name="LAST_COMMIT_MESSAGE" value="MAC" />
+  </component>
+  <component name="XSLT-Support.FileAssociations.UIState">
+    <expand />
+    <select />
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/MaleficHat$app.coverage" NAME="app Coverage Results" MODIFIED="1755255371612" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/Backend" />
+    <SUITE FILE_PATH="coverage/MaleficHat$create_db.coverage" NAME="create_db Coverage Results" MODIFIED="1742474342589" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/MaleficHat$Bot.coverage" NAME="Bot Coverage Results" MODIFIED="1757407700865" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
+    <SUITE FILE_PATH="coverage/MaleficHat$bot.coverage" NAME="bot Coverage Results" MODIFIED="1755205043703" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/Backend" />
+    <SUITE FILE_PATH="coverage/MaleficHat$fonction_bdd.coverage" NAME="fonction_bdd Coverage Results" MODIFIED="1744618828482" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+  </component>
+</project>

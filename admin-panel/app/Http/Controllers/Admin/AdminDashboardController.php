@@ -22,16 +22,23 @@ class AdminDashboardController extends Controller
             'search'   => ['nullable', 'string', 'max:80'],
             'region'   => ['nullable', 'string', 'max:10'],
             'tier'     => ['nullable', 'string', 'max:20'],
-            'status'   => ['nullable', 'in:in_game,in_queue,offline'],
+            'status'   => ['nullable', 'in:in_game,offline'],
             'guild_id' => ['nullable', 'integer'],
-            'sort'     => ['nullable', 'in:recent,name,lp,tier'],
+            'sort'     => ['nullable', 'in:recent,name,lp,rank,status,region,guilds,status_updated'],
             'direction'=> ['nullable', 'in:asc,desc'],
         ])->validate();
 
+        if (!empty($filters['tier'])) {
+            $filters['tier'] = strtoupper($filters['tier']);
+        }
+
+        $tierOrder = ['IRON', 'BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'EMERALD', 'DIAMOND', 'MASTER', 'GRANDMASTER', 'CHALLENGER'];
+
         $playersQuery = Player::query()
             ->with(['guilds' => function ($query) {
-                $query->select('guild.guild_id', 'leaderboard_channel_id');
-            }]);
+                $query->select('guild.guild_id', 'guild.name', 'leaderboard_channel_id');
+            }])
+            ->withCount('guilds');
 
         if (!empty($filters['search'])) {
             $term = '%' . $filters['search'] . '%';
@@ -47,7 +54,7 @@ class AdminDashboardController extends Controller
         }
 
         if (!empty($filters['tier'])) {
-            $playersQuery->where('tier', $filters['tier']);
+            $playersQuery->whereRaw('UPPER(tier) = ?', [strtoupper($filters['tier'])]);
         }
 
         if (!empty($filters['status'])) {
@@ -68,8 +75,28 @@ class AdminDashboardController extends Controller
             case 'lp':
                 $playersQuery->orderBy('lp', $direction);
                 break;
-            case 'tier':
-                $playersQuery->orderBy('tier', $direction);
+            case 'rank':
+                $caseExpression = 'CASE UPPER(tier)';
+                foreach ($tierOrder as $index => $tier) {
+                    $caseExpression .= " WHEN '{$tier}' THEN {$index}";
+                }
+                $caseExpression .= ' ELSE ' . count($tierOrder) . ' END';
+
+                $playersQuery
+                    ->orderByRaw($caseExpression . ' ' . ($direction === 'asc' ? 'ASC' : 'DESC'))
+                    ->orderBy('rank', $direction);
+                break;
+            case 'status':
+                $playersQuery->orderBy('current_game_status', $direction);
+                break;
+            case 'region':
+                $playersQuery->orderBy('region', $direction);
+                break;
+            case 'guilds':
+                $playersQuery->orderBy('guilds_count', $direction);
+                break;
+            case 'status_updated':
+                $playersQuery->orderBy('current_game_updated_at', $direction);
                 break;
             default:
                 $playersQuery->orderBy('updated_at', $direction);
@@ -81,7 +108,6 @@ class AdminDashboardController extends Controller
             return [
                 'total_players'   => Player::count(),
                 'players_in_game' => Player::where('current_game_status', 'in_game')->count(),
-                'players_in_queue'=> Player::where('current_game_status', 'in_queue')->count(),
                 'updated_at'      => Carbon::now(),
             ];
         });
@@ -94,17 +120,15 @@ class AdminDashboardController extends Controller
             ->filter(fn ($region) => !empty($region))
             ->values();
 
-        $tiers = Player::query()
-            ->select('tier')
-            ->distinct()
-            ->orderBy('tier')
-            ->pluck('tier')
-            ->filter(fn ($tier) => !empty($tier))
-            ->values();
+        $tiers = collect($tierOrder)
+            ->map(fn ($tier) => [
+                'value' => $tier,
+                'label' => ucfirst(strtolower($tier)),
+            ]);
 
         $guilds = Guild::query()
             ->orderBy('guild_id')
-            ->get(['guild_id', 'leaderboard_channel_id']);
+            ->get(['guild_id', 'name', 'leaderboard_channel_id']);
 
         return view('admin.dashboard', [
             'players' => $players,

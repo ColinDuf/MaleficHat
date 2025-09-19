@@ -1,0 +1,92 @@
+Index: create_db.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import logging\nimport sqlite3\n\n\ndef create_db():\n    # Connexion (ou création) de la base de données\n    logging.info(f\" Starting DB creation...\")\n    conn = sqlite3.connect(\"database.db\")\n    cursor = conn.cursor()\n\n    # Création de la table des joueurs\n    cursor.execute(\"\"\"\n    CREATE TABLE IF NOT EXISTS players (\n        summoner_id TEXT NOT NULL,\n        puuid TEXT PRIMARY KEY,\n        username TEXT NOT NULL\n    );\n    \"\"\")\n\n    # Création de la table d'inscription (registrations) qui fait le lien entre joueurs et guilds\n    cursor.execute(\"\"\"\n    CREATE TABLE IF NOT EXISTS registrations (\n        player_puuid TEXT,\n        guild_id TEXT,\n        channel_id TEXT,\n        last_match_id TEXT,\n        alerte BOOLEAN DEFAULT 0,\n        tier TEXT,\n        rank TEXT,\n        lp INTEGER,\n        lp_24h INTEGER DEFAULT 0,\n        lp_7d INTEGER DEFAULT 0,\n        PRIMARY KEY (player_puuid, guild_id),\n        FOREIGN KEY (player_puuid) REFERENCES players(puuid)\n    );\n    \"\"\")\n\n    # Création de la table des guilds (serveurs Discord)\n    cursor.execute(\"\"\"\n    CREATE TABLE IF NOT EXISTS guilds (\n        guild_id TEXT PRIMARY KEY,\n        leaderboard_channel_id TEXT\n    );\n    \"\"\")\n\n    # Optionnel : Création de la table des matchs pour enregistrer l'historique des parties\n    cursor.execute(\"\"\"\n    CREATE TABLE IF NOT EXISTS matches (\n        match_id TEXT PRIMARY KEY,\n        player_puuid TEXT,\n        guild_id TEXT,\n        result TEXT,\n        champion TEXT,\n        kills INTEGER,\n        deaths INTEGER,\n        assists INTEGER,\n        damage INTEGER,\n        duration TEXT,\n        match_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n        FOREIGN KEY (player_puuid) REFERENCES players(puuid)\n    );\n    \"\"\")\n\n    # Enregistrement des modifications et fermeture de la connexion\n    conn.commit()\n    conn.close()\n    logging.info(f\"Database created!\")\n\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/create_db.py b/create_db.py
+--- a/create_db.py	(revision 1edff16f93cedc2d8430937bb1064fadaf7af631)
++++ b/create_db.py	(date 1744619828568)
+@@ -1,68 +1,45 @@
+ import logging
+ import sqlite3
+ 
+-
+ def create_db():
+-    # Connexion (ou création) de la base de données
+-    logging.info(f" Starting DB creation...")
++    logging.info("Starting DB creation...")
+     conn = sqlite3.connect("database.db")
+     cursor = conn.cursor()
+ 
+-    # Création de la table des joueurs
+     cursor.execute("""
+-    CREATE TABLE IF NOT EXISTS players (
++    CREATE TABLE IF NOT EXISTS player (
+         summoner_id TEXT NOT NULL,
+-        puuid TEXT PRIMARY KEY,
+-        username TEXT NOT NULL
+-    );
+-    """)
+-
+-    # Création de la table d'inscription (registrations) qui fait le lien entre joueurs et guilds
+-    cursor.execute("""
+-    CREATE TABLE IF NOT EXISTS registrations (
+-        player_puuid TEXT,
+-        guild_id TEXT,
++        puuid TEXT,
++        username TEXT NOT NULL,
++        guild_id TEXT,             
+         channel_id TEXT,
+         last_match_id TEXT,
+-        alerte BOOLEAN DEFAULT 0,
+         tier TEXT,
+         rank TEXT,
+         lp INTEGER,
+         lp_24h INTEGER DEFAULT 0,
+         lp_7d INTEGER DEFAULT 0,
+-        PRIMARY KEY (player_puuid, guild_id),
+-        FOREIGN KEY (player_puuid) REFERENCES players(puuid)
++        PRIMARY KEY (puuid, guild_id)
+     );
+     """)
+ 
+-    # Création de la table des guilds (serveurs Discord)
+     cursor.execute("""
+-    CREATE TABLE IF NOT EXISTS guilds (
++    CREATE TABLE IF NOT EXISTS guild (
+         guild_id TEXT PRIMARY KEY,
+         leaderboard_channel_id TEXT
+     );
+     """)
+ 
+-    # Optionnel : Création de la table des matchs pour enregistrer l'historique des parties
+     cursor.execute("""
+-    CREATE TABLE IF NOT EXISTS matches (
+-        match_id TEXT PRIMARY KEY,
+-        player_puuid TEXT,
++    CREATE TABLE IF NOT EXISTS leaderboard (
+         guild_id TEXT,
+-        result TEXT,
+-        champion TEXT,
+-        kills INTEGER,
+-        deaths INTEGER,
+-        assists INTEGER,
+-        damage INTEGER,
+-        duration TEXT,
+-        match_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+-        FOREIGN KEY (player_puuid) REFERENCES players(puuid)
++        leaderboard_id TEXT,
++        player_puuid TEXT,
++        PRIMARY KEY (guild_id, leaderboard_id, player_puuid),
++        FOREIGN KEY (player_puuid) REFERENCES player(puuid)
+     );
+     """)
+ 
+-    # Enregistrement des modifications et fermeture de la connexion
+     conn.commit()
+     conn.close()
+-    logging.info(f"Database created!")
+-
++    logging.info("Database created!")
